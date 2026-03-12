@@ -1,0 +1,10 @@
+{
+  "name": "t4al",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

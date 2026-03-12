@@ -1,0 +1,9 @@
+{
+  "name": "@t4al/client",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@t4al/shared": "*"
+  }
+}
