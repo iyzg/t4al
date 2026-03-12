@@ -21,6 +21,23 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/games', gameRoutes);
 app.use('/api/games/:gameId/teams', teamRoutes);
 
+// Error-handling middleware — must be after all routes
+// Express identifies this as an error handler by the 4-arg signature
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  // Postgres: invalid UUID format
+  if (err.code === '22P02') {
+    res.status(400).json({ error: 'invalid id format' });
+    return;
+  }
+  // Postgres: foreign key violation (e.g. team referencing nonexistent game)
+  if (err.code === '23503') {
+    res.status(400).json({ error: 'referenced resource does not exist' });
+    return;
+  }
+  console.error(err);
+  res.status(500).json({ error: 'internal server error' });
+});
+
 const io = new Server(httpServer, { cors: { origin: '*' } })
 io.on('connection', (socket) => { console.log('client connected:', socket.id); })
 
