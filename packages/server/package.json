@@ -1,0 +1,23 @@
+{
+  "name": "@t4al/server",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "migrate": "tsx src/db/migrate.ts"
+  },
+  "dependencies": {
+    "@t4al/shared": "*",
+    "cors": "^2.8.6",
+    "dotenv": "^16.4.7",
+    "express": "^5.2.1",
+    "pg": "^8.13.1",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/pg": "^8.11.11",
+    "tsx": "^4.19.2"
+  }
+}
