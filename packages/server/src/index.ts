@@ -6,6 +6,7 @@ import { Server } from 'socket.io';
 import gameRoutes from './routes/games.js';
 import teamRoutes from './routes/teams.js';
 import challengeRoutes from './routes/challenges.js';
+import { registerSocketHandlers } from './socket.js';
 
 const app = express();
 app.use(cors());
@@ -41,8 +42,8 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   res.status(500).json({ error: 'internal server error' });
 });
 
-const io = new Server(httpServer, { cors: { origin: '*' } })
-io.on('connection', (socket) => { console.log('client connected:', socket.id); })
+const io = new Server(httpServer, { cors: { origin: '*' } });
+registerSocketHandlers(io);
 
 const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {

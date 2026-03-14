@@ -18,6 +18,7 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/pg": "^8.11.11",
+    "socket.io-client": "^4.8.3",
     "tsx": "^4.19.2"
   }
 }
