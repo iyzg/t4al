@@ -5,6 +5,7 @@ import { createServer } from 'node:http';
 import { Server } from 'socket.io';
 import gameRoutes from './routes/games.js';
 import teamRoutes from './routes/teams.js';
+import challengeRoutes from './routes/challenges.js';
 
 const app = express();
 app.use(cors());
@@ -20,6 +21,8 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api/games', gameRoutes);
 app.use('/api/games/:gameId/teams', teamRoutes);
+app.use('/api/games/:gameId/challenges', challengeRoutes);
+app.use('/api/challenges', challengeRoutes);
 
 // Error-handling middleware — must be after all routes
 // Express identifies this as an error handler by the 4-arg signature
