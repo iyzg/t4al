@@ -7,6 +7,7 @@ import gameRoutes from './routes/games.js';
 import teamRoutes from './routes/teams.js';
 import challengeRoutes from './routes/challenges.js';
 import { registerSocketHandlers } from './socket.js';
+import { startTicker } from './ticker.js';
 
 const app = express();
 app.use(cors());
@@ -44,6 +45,7 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 
 const io = new Server(httpServer, { cors: { origin: '*' } });
 registerSocketHandlers(io);
+startTicker(io);
 
 const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {
