@@ -428,28 +428,28 @@ Built from `LocationHistory` + challenge events:
    6.2. [x] Lobby UI — see teams, create team, join team
    6.3. [x] Server: join API + socket room management
    6.4. [ ] Admin starts game → all clients transition to map
-7. [ ] **Challenge system**
-   7.1. [ ] Admin challenge creation UI (click map → popover)
-   7.2. [ ] Challenge pins on team map
-   7.3. [ ] Proximity detection (GPS + radius check)
-   7.4. [ ] Activate flow (set active, reveal description)
-   7.5. [ ] Complete flow (confirm, atomic claim, score update)
-   7.6. [ ] Abandon flow
-   7.7. [ ] Auto-spawn ticker (offset-based)
-8. [ ] **Leaderboard + modes**
-   8.1. [ ] Leaderboard component (full / rank_only / hidden)
-   8.2. [ ] Mode segment runtime (ticker checks segments)
-   8.3. [ ] Mode effects system (extensible per-mode behavior)
-   8.4. [ ] Admin timeline editor (paintable segments)
-9. [ ] **Admin live panel**
-   9.1. [ ] Admin map with team positions
-   9.2. [ ] Challenge status list
-   9.3. [ ] Manual controls (spawn early, force mode, end game)
-   9.4. [ ] Live event log
-10. [ ] **End screen + stats**
-    10.1. [ ] Final leaderboard
-    10.2. [ ] Basic stats (distance, challenge timeline)
-    10.3. [ ] Game event replay
+7. [x] **Challenge system**
+   7.1. [x] Admin challenge creation UI (click map → popover)
+   7.2. [x] Challenge pins on team map
+   7.3. [x] Proximity detection (GPS + haversine)
+   7.4. [x] Activate flow (set active, reveal description)
+   7.5. [x] Complete flow (confirm dialog, atomic claim, score update)
+   7.6. [x] Abandon flow
+   7.7. [x] Auto-spawn ticker (offset-based, done server-side)
+8. [x] **Leaderboard + modes**
+   8.1. [x] Leaderboard component (full / rank_only / hidden)
+   8.2. [x] Mode segment runtime (ticker checks segments — done server-side)
+   8.3. [x] Mode effects system (ModeBanner + leaderboard hiding)
+   8.4. [ ] Admin timeline editor (paintable segments) — Phase 2
+9. [x] **Admin live panel**
+   9.1. [x] Admin map with team positions
+   9.2. [x] Challenge status list
+   9.3. [x] Manual controls (start game, end game)
+   9.4. [x] Live event log (polling)
+10. [x] **End screen + stats**
+    10.1. [x] Final leaderboard with standings
+    10.2. [ ] Basic stats (distance, challenge timeline) — Phase 2
+    10.3. [ ] Game event replay — Phase 2
 11. [ ] **Deploy**
     11.1. [ ] Build scripts (server + client)
     11.2. [ ] nginx config (TLS, reverse proxy, PMTiles serving)
