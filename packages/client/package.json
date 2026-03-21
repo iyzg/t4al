@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@t4al/shared": "*",
+    "maplibre-gl": "^5.21.0",
+    "pmtiles": "^4.4.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
