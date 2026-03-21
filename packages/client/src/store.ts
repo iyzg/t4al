@@ -52,18 +52,17 @@ export const useGameStore = create<GameStore>()((set) => ({
     challenges: { ...state.challenges, [challenge.id]: challenge }
   })),
 
-  challengeClaimed: (challengeId, claimedByTeamId) => set((state) => ({
-    activeChallengeId: challengeId === state.activeChallengeId ? null : state.activeChallengeId,
-    challenges: { 
-      ...state.challenges,
-      [challengeId]: {
-        ...state.challenges[challengeId],
-        status: 'claimed',
-        claimedByTeamId: claimedByTeamId,
+  challengeClaimed: (challengeId, claimedByTeamId) => set((state) => {
+    const existing = state.challenges[challengeId];
+    if (!existing) return { activeChallengeId: challengeId === state.activeChallengeId ? null : state.activeChallengeId };
+    return {
+      activeChallengeId: challengeId === state.activeChallengeId ? null : state.activeChallengeId,
+      challenges: {
+        ...state.challenges,
+        [challengeId]: { ...existing, status: 'claimed' as const, claimedByTeamId },
       },
-    }
-
-  })),
+    };
+  }),
 
   leaderboardUpdated: (teams, mode) => set(() => ({
     leaderboard: teams,

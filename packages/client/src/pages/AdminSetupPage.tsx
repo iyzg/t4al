@@ -1,12 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import maplibregl from 'maplibre-gl';
-import 'maplibre-gl/dist/maplibre-gl.css';
-import { Protocol } from 'pmtiles';
 import { getMapStyle, CHICAGO_CENTER } from '../mapStyle';
+import { ensurePmtilesProtocol } from '../mapSetup';
 
-const protocol = new Protocol();
-maplibregl.addProtocol('pmtiles', protocol.tile);
+ensurePmtilesProtocol();
 
 interface ChallengeForm {
   lat: number;
@@ -121,31 +119,32 @@ export default function AdminSetupPage() {
   }, [challenges]);
 
   async function handleSave() {
-    if (editingId === null) {
-      const res = await fetch(`/api/games/${gameId}/challenges`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(popover)
-      });
+    const url = editingId === null
+      ? `/api/games/${gameId}/challenges`
+      : `/api/challenges/${editingId}`;
+    const method = editingId === null ? 'POST' : 'PUT';
 
-      const data = await res.json()
-      setChallenges([...challenges, { ...popover!, id: data.id }]);
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(popover),
+    });
 
-      setPopover(null);
-      setEditingId(null);
-    } else {
-      const res = await fetch(`/api/challenges/${editingId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(popover)
-      });
-
-      const data = await res.json();
-      setChallenges(challenges.map(c => c.id === editingId ? { ...popover!, id: editingId } : c))
-
-      setPopover(null);
-      setEditingId(null);
+    if (!res.ok) {
+      alert('Failed to save challenge');
+      return;
     }
+
+    const data = await res.json();
+
+    if (editingId === null) {
+      setChallenges([...challenges, { ...popover!, id: data.id }]);
+    } else {
+      setChallenges(challenges.map((c) => (c.id === editingId ? { ...popover!, id: editingId } : c)));
+    }
+
+    setPopover(null);
+    setEditingId(null);
   }
 
   if (!popover) {

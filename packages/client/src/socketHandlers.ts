@@ -1,45 +1,53 @@
 import { socket } from './socket';
 import { useGameStore } from './store';
 
+let registered = false;
+
 // Wire server events to store actions.
-// Called once at app startup — handlers persist for the socket's lifetime.
+// Guarded so calling multiple times is safe (idempotent).
 export function registerSocketHandlers() {
+  if (registered) return;
+  registered = true;
+
   const store = useGameStore.getState;
 
   socket.on('challenge:spawned', (data) => {
+    if (!data?.challenge) return;
     store().challengeSpawned(data.challenge);
   });
 
   socket.on('challenge:claimed', (data) => {
+    if (!data?.challengeId) return;
     store().challengeClaimed(data.challengeId, data.claimedByTeamId);
   });
 
   socket.on('leaderboard:update', (data) => {
+    if (!data?.teams) return;
     store().leaderboardUpdated(data.teams, data.mode);
   });
 
   socket.on('mode:change', (data) => {
+    if (!data) return;
     store().modeChanged(data.mode, data.segmentMode);
   });
 
-  socket.on('challenge:unlocked', (data) => {
-    // Server says we're in range — could show a notification
-    console.log('Challenge unlocked:', data.challengeId);
+  socket.on('challenge:unlocked', (_data) => {
+    // Server says we're in range — future: show notification
   });
 
-  socket.on('challenge:left', (data) => {
+  socket.on('challenge:left', (_data) => {
     store().setActiveChallengeId(null);
   });
 
-  socket.on('complete:success', (data) => {
+  socket.on('complete:success', (_data) => {
     store().setActiveChallengeId(null);
   });
 
   socket.on('complete:failed', (data) => {
-    console.warn('Complete failed:', data.reason);
+    console.warn('Complete failed:', data?.reason);
   });
 
-  socket.on('game:ended', (data) => {
+  socket.on('game:ended', (_data) => {
     store().setGameStatus('ended');
   });
 }

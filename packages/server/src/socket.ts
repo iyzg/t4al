@@ -12,32 +12,35 @@ export function registerSocketHandlers(io: Server) {
   setInterval(async () => {
     if (locationBuffer.length === 0) return;
     const batch = locationBuffer.splice(0, locationBuffer.length);
-    const values = batch.map(
-      (_, i) => `($${i * 4 + 1}, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4})`
-    ).join(', ');
-    const params = batch.flatMap(l => [l.teamId, l.gameId, l.lat, l.lng]);
-    await pool.query(
-      `INSERT INTO location_history (team_id, game_id, lat, lng) VALUES ${values}`,
-      params,
-    );
+    const values = batch
+      .map((_, i) => `($${i * 4 + 1}, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4})`)
+      .join(', ');
+    const params = batch.flatMap((l) => [l.teamId, l.gameId, l.lat, l.lng]);
+    try {
+      await pool.query(
+        `INSERT INTO location_history (team_id, game_id, lat, lng) VALUES ${values}`,
+        params,
+      );
+    } catch (err) {
+      console.error('Failed to flush location buffer:', err);
+    }
   }, 5_000);
 
   io.on('connection', (socket) => {
     console.log('client connected:', socket.id);
 
     // ── game:join ──
-    // Add this socket to a room for the game so we can broadcast to all players
     socket.on('game:join', (data) => {
+      if (!data?.gameId || !data?.teamId) return;
       socket.join(data.gameId);
-      // Store gameId and teamId on the socket for later use
       socket.data.gameId = data.gameId;
       socket.data.teamId = data.teamId;
       console.log(`team ${data.teamId} joined game ${data.gameId}`);
     });
 
     // ── location:update ──
-    // Update in-memory position + buffer for DB flush
     socket.on('location:update', (data) => {
+      if (!data?.teamId || data.lat == null || data.lng == null) return;
       currentPositions.set(data.teamId, {
         lat: data.lat,
         lng: data.lng,
@@ -54,58 +57,81 @@ export function registerSocketHandlers(io: Server) {
     });
 
     // ── challenge:activate ──
-    // Team sets a challenge as their active one
     socket.on('challenge:activate', async (data) => {
-      // Check team doesn't already have an active challenge
-      const team = await pool.query('SELECT active_challenge_id FROM teams WHERE id = $1', [data.teamId]);
-      if (team.rows[0]?.active_challenge_id) {
-        socket.emit('complete:failed', { challengeId: data.challengeId, reason: 'not_active' as const });
-        return;
+      if (!data?.challengeId || !data?.teamId) return;
+      try {
+        const team = await pool.query('SELECT active_challenge_id FROM teams WHERE id = $1', [data.teamId]);
+        if (!team.rows[0]) return;
+        if (team.rows[0].active_challenge_id) {
+          socket.emit('complete:failed', { challengeId: data.challengeId, reason: 'not_active' as const });
+          return;
+        }
+        await pool.query('UPDATE teams SET active_challenge_id = $1 WHERE id = $2', [data.challengeId, data.teamId]);
+      } catch (err) {
+        console.error('challenge:activate error:', err);
       }
-      await pool.query('UPDATE teams SET active_challenge_id = $1 WHERE id = $2', [data.challengeId, data.teamId]);
     });
 
     // ── challenge:abandon ──
-    // Team drops their active challenge
     socket.on('challenge:abandon', async (data) => {
-      await pool.query('UPDATE teams SET active_challenge_id = NULL WHERE id = $1', [data.teamId]);
-      socket.emit('challenge:left', { challengeId: data.challengeId });
+      if (!data?.challengeId || !data?.teamId) return;
+      try {
+        await pool.query('UPDATE teams SET active_challenge_id = NULL WHERE id = $1', [data.teamId]);
+        socket.emit('challenge:left', { challengeId: data.challengeId });
+      } catch (err) {
+        console.error('challenge:abandon error:', err);
+      }
     });
 
     // ── challenge:complete ──
-    // Team marks challenge complete — atomic claim, first team wins
+    // Uses a transaction so claim + score update are atomic
     socket.on('challenge:complete', async (data) => {
-      const result = await pool.query(
-        `UPDATE challenges 
-         SET status='claimed', claimed_by_team_id=$2, claimed_at=NOW()
-         WHERE id=$1 AND status='active'
-         RETURNING *`,
-        [data.challengeId, data.teamId],
-      );
+      if (!data?.challengeId || !data?.teamId) return;
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
 
-      if (result.rows.length === 0) {
-        socket.emit('complete:failed', { challengeId: data.challengeId, reason: 'already_claimed' });
-        return;
+        const result = await client.query(
+          `UPDATE challenges
+           SET status='claimed', claimed_by_team_id=$2, claimed_at=NOW()
+           WHERE id=$1 AND status='active'
+           RETURNING *`,
+          [data.challengeId, data.teamId],
+        );
+
+        if (result.rows.length === 0) {
+          await client.query('ROLLBACK');
+          socket.emit('complete:failed', { challengeId: data.challengeId, reason: 'already_claimed' });
+          return;
+        }
+
+        const challenge = result.rows[0];
+        await client.query(
+          'UPDATE teams SET score = score + $1, active_challenge_id = NULL WHERE id = $2',
+          [challenge.points, data.teamId],
+        );
+
+        await client.query('COMMIT');
+
+        const teamResult = await pool.query('SELECT name FROM teams WHERE id=$1', [data.teamId]);
+        const teamName = teamResult.rows[0]?.name ?? 'Unknown';
+
+        socket.emit('complete:success', { challengeId: challenge.id, points: challenge.points });
+
+        if (socket.data.gameId) {
+          io.to(socket.data.gameId).emit('challenge:claimed', {
+            challengeId: challenge.id,
+            claimedByTeamId: data.teamId,
+            claimedByTeamName: teamName,
+            points: challenge.points,
+          });
+        }
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        console.error('challenge:complete error:', err);
+      } finally {
+        client.release();
       }
-
-      const challenge = result.rows[0];
-      await pool.query(
-        'UPDATE teams SET score=score + $1, active_challenge_id = NULL where id = $2',
-        [challenge.points, data.teamId]
-      );
-
-      const teamResult = await pool.query('SELECT name FROM teams WHERE id=$1', [data.teamId]);
-
-      socket.emit('complete:success', { challengeId: challenge.id, points: challenge.points });
-      io.to(socket.data.gameId).emit('challenge:claimed',
-      { 
-        challengeId: challenge.id,
-        claimedByTeamId: data.teamId,
-        claimedByTeamName: teamResult.rows[0].name,
-        points: challenge.points
-      });
-
-
     });
 
     socket.on('disconnect', () => {

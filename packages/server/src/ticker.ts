@@ -7,8 +7,12 @@ const currentModes = new Map<string, string | null>();
 
 export function startTicker(io: Server) {
   setInterval(async () => {
-    await spawnChallenges(io);
-    await checkModeTransitions(io);
+    try {
+      await spawnChallenges(io);
+      await checkModeTransitions(io);
+    } catch (err) {
+      console.error('Ticker error:', err);
+    }
   }, TICKER_INTERVAL_MS);
 }
 

@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
-import 'maplibre-gl/dist/maplibre-gl.css';
-import { Protocol } from 'pmtiles';
 import { getMapStyle, CHICAGO_CENTER, DEFAULT_ZOOM } from '../mapStyle';
+import { ensurePmtilesProtocol } from '../mapSetup';
 import { useGameStore } from '../store';
 import { socket } from '../socket';
 import { registerSocketHandlers } from '../socketHandlers';
@@ -12,10 +11,9 @@ import Leaderboard from '../components/Leaderboard';
 import ModeBanner from '../components/ModeBanner';
 import GameHUD from '../components/GameHUD';
 
-const protocol = new Protocol();
-maplibregl.addProtocol('pmtiles', protocol.tile);
+ensurePmtilesProtocol();
 
-// Haversine distance in meters between two lat/lng points
+// Haversine distance in meters
 function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -31,6 +29,7 @@ export default function GamePage() {
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   const posMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const myPosRef = useRef<{ lat: number; lng: number } | null>(null);
 
   const challenges = useGameStore((s) => s.challenges);
   const activeChallengeId = useGameStore((s) => s.activeChallengeId);
@@ -41,7 +40,7 @@ export default function GamePage() {
   const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
   const [myPos, setMyPos] = useState<{ lat: number; lng: number } | null>(null);
 
-  // Register socket handlers once
+  // Register socket handlers once (idempotent)
   useEffect(() => {
     registerSocketHandlers();
   }, []);
@@ -54,15 +53,18 @@ export default function GamePage() {
       (pos) => {
         const { latitude: lat, longitude: lng } = pos.coords;
         setMyPos({ lat, lng });
+        myPosRef.current = { lat, lng };
       },
       (err) => console.warn('GPS error:', err.message),
       { enableHighAccuracy: true },
     );
 
-    // Send location to server on interval
+    // Send location to server on interval (reads from ref to avoid stale closure)
     const heartbeat = setInterval(() => {
-      const pos = useGameStore.getState();
-      // myPos is local state, read from the ref pattern below
+      const pos = myPosRef.current;
+      if (pos) {
+        socket.emit('location:update', { teamId, lat: pos.lat, lng: pos.lng });
+      }
     }, HEARTBEAT_INTERVAL_MS);
 
     return () => {
@@ -70,12 +72,6 @@ export default function GamePage() {
       clearInterval(heartbeat);
     };
   }, [teamId, gameId]);
-
-  // Send location updates when myPos changes
-  useEffect(() => {
-    if (!myPos || !teamId) return;
-    socket.emit('location:update', { teamId, lat: myPos.lat, lng: myPos.lng });
-  }, [myPos, teamId]);
 
   // Initialize map
   useEffect(() => {
@@ -127,11 +123,10 @@ export default function GamePage() {
 
     // Add/update markers
     challengeList.forEach((c) => {
-      if (c.status === 'scheduled') return; // not yet spawned
+      if (c.status === 'scheduled') return;
 
       const existing = markersRef.current.get(c.id);
       if (existing) {
-        // Update position if needed
         existing.setLngLat([c.lng, c.lat]);
         return;
       }
@@ -151,8 +146,6 @@ export default function GamePage() {
     if (!selectedChallenge || !teamId) return;
     socket.emit('challenge:activate', { challengeId: selectedChallenge.id, teamId });
     useGameStore.getState().setActiveChallengeId(selectedChallenge.id);
-    // Refresh selected challenge view
-    setSelectedChallenge({ ...selectedChallenge });
   }, [selectedChallenge, teamId]);
 
   const handleAbandon = useCallback(() => {
@@ -168,7 +161,6 @@ export default function GamePage() {
     socket.emit('challenge:complete', { challengeId: activeChallengeId, teamId });
   }, [activeChallengeId, teamId]);
 
-  // Compute proximity for selected challenge
   const inRange =
     selectedChallenge && myPos
       ? distanceMeters(myPos.lat, myPos.lng, selectedChallenge.lat, selectedChallenge.lng) <= selectedChallenge.proximityMeters
@@ -184,7 +176,6 @@ export default function GamePage() {
       <GameHUD />
       <Leaderboard />
 
-      {/* Challenge card */}
       {selectedChallenge && (
         <div
           style={{
@@ -205,7 +196,6 @@ export default function GamePage() {
             <span style={{ fontWeight: 'bold', color: '#f39c12' }}>{selectedChallenge.points} pts</span>
           </div>
 
-          {/* Description only visible when active */}
           {isMyActive && <p style={{ marginTop: 8, opacity: 0.8 }}>{selectedChallenge.description}</p>}
 
           {selectedChallenge.status === 'claimed' ? (
@@ -228,7 +218,9 @@ export default function GamePage() {
               Set as Active
             </button>
           ) : (
-            <p style={{ opacity: 0.6, marginTop: 8 }}>Get closer to activate ({myPos ? Math.round(distanceMeters(myPos.lat, myPos.lng, selectedChallenge.lat, selectedChallenge.lng)) + 'm away' : 'GPS loading...'})</p>
+            <p style={{ opacity: 0.6, marginTop: 8 }}>
+              Get closer to activate ({myPos ? Math.round(distanceMeters(myPos.lat, myPos.lng, selectedChallenge.lat, selectedChallenge.lng)) + 'm away' : 'GPS loading...'})
+            </p>
           )}
 
           <button

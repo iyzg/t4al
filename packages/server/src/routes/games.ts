@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
 import pool from '../db/pool.js';
+import { asyncHandler } from '../asyncHandler.js';
 
 const router = Router();
 
 // POST /api/games — create a new game
-router.post('/', async (req, res) => {
+router.post('/', asyncHandler(async (req, res) => {
   const { name, durationMinutes = 120, leaderboardMode = 'full' } = req.body;
 
   if (!name) {
@@ -13,8 +14,8 @@ router.post('/', async (req, res) => {
     return;
   }
 
-  const joinCode = crypto.randomBytes(3).toString('hex');   // 6-char hex code
-  const adminCode = crypto.randomBytes(4).toString('hex');  // 8-char hex code
+  const joinCode = crypto.randomBytes(3).toString('hex');
+  const adminCode = crypto.randomBytes(4).toString('hex');
 
   const result = await pool.query(
     `INSERT INTO games (name, duration_minutes, join_code, admin_code, leaderboard_mode)
@@ -24,10 +25,10 @@ router.post('/', async (req, res) => {
   );
 
   res.status(201).json(result.rows[0]);
-});
+}));
 
 // GET /api/games/join/:joinCode — look up a game by join code
-router.get('/join/:joinCode', async (req, res) => {
+router.get('/join/:joinCode', asyncHandler(async (req, res) => {
   const result = await pool.query(
     'SELECT * FROM games WHERE join_code = $1',
     [req.params.joinCode],
@@ -39,10 +40,10 @@ router.get('/join/:joinCode', async (req, res) => {
   }
 
   res.json(result.rows[0]);
-});
+}));
 
 // GET /api/games/:id — get a game by ID
-router.get('/:id', async (req, res) => {
+router.get('/:id', asyncHandler(async (req, res) => {
   const result = await pool.query('SELECT * FROM games WHERE id = $1', [req.params.id]);
 
   if (result.rows.length === 0) {
@@ -51,12 +52,12 @@ router.get('/:id', async (req, res) => {
   }
 
   res.json(result.rows[0]);
-});
+}));
 
 // POST /api/games/:id/start — admin starts the game
-router.post('/:id/start', async (req, res) => {
+router.post('/:id/start', asyncHandler(async (req, res) => {
   const result = await pool.query(
-    `UPDATE games 
+    `UPDATE games
      SET status = 'active',
          start_time = NOW(),
          end_time = NOW() + (duration_minutes || ' minutes')::interval
@@ -71,10 +72,10 @@ router.post('/:id/start', async (req, res) => {
   }
 
   res.json(result.rows[0]);
-});
+}));
 
 // POST /api/games/:id/end — admin force-ends the game
-router.post('/:id/end', async (req, res) => {
+router.post('/:id/end', asyncHandler(async (req, res) => {
   const result = await pool.query(
     `UPDATE games SET status = 'ended' WHERE id = $1 AND status = 'active' RETURNING *`,
     [req.params.id],
@@ -86,6 +87,6 @@ router.post('/:id/end', async (req, res) => {
   }
 
   res.json(result.rows[0]);
-});
+}));
 
 export default router;

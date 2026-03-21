@@ -1,12 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import maplibregl from 'maplibre-gl';
-import 'maplibre-gl/dist/maplibre-gl.css';
-import { Protocol } from 'pmtiles';
 import { getMapStyle, CHICAGO_CENTER } from '../mapStyle';
+import { ensurePmtilesProtocol } from '../mapSetup';
 
-const protocol = new Protocol();
-maplibregl.addProtocol('pmtiles', protocol.tile);
+ensurePmtilesProtocol();
 
 interface GameEvent {
   id: string;
