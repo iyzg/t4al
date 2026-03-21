@@ -26,6 +26,21 @@ router.post('/', async (req, res) => {
   res.status(201).json(result.rows[0]);
 });
 
+// GET /api/games/join/:joinCode — look up a game by join code
+router.get('/join/:joinCode', async (req, res) => {
+  const result = await pool.query(
+    'SELECT * FROM games WHERE join_code = $1',
+    [req.params.joinCode],
+  );
+
+  if (result.rows.length === 0) {
+    res.status(404).json({ error: 'invalid join code' });
+    return;
+  }
+
+  res.json(result.rows[0]);
+});
+
 // GET /api/games/:id — get a game by ID
 router.get('/:id', async (req, res) => {
   const result = await pool.query('SELECT * FROM games WHERE id = $1', [req.params.id]);
