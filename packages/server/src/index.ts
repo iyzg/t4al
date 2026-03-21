@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import { createServer } from 'node:http';
 import { Server } from 'socket.io';
+import pool from './db/pool.js';
 import gameRoutes from './routes/games.js';
 import teamRoutes from './routes/teams.js';
 import challengeRoutes from './routes/challenges.js';
@@ -25,6 +26,15 @@ app.use('/api/games', gameRoutes);
 app.use('/api/games/:gameId/teams', teamRoutes);
 app.use('/api/games/:gameId/challenges', challengeRoutes);
 app.use('/api/challenges', challengeRoutes);
+
+// Game events (for admin live panel)
+app.get('/api/games/:gameId/events', async (req, res) => {
+  const result = await pool.query(
+    'SELECT * FROM game_events WHERE game_id = $1 ORDER BY created_at DESC LIMIT 100',
+    [req.params.gameId],
+  );
+  res.json(result.rows);
+});
 
 // Error-handling middleware — must be after all routes
 // Express identifies this as an error handler by the 4-arg signature

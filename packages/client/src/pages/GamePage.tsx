@@ -8,6 +8,9 @@ import { socket } from '../socket';
 import { registerSocketHandlers } from '../socketHandlers';
 import { HEARTBEAT_INTERVAL_MS } from '@t4al/shared';
 import type { Challenge } from '@t4al/shared';
+import Leaderboard from '../components/Leaderboard';
+import ModeBanner from '../components/ModeBanner';
+import GameHUD from '../components/GameHUD';
 
 const protocol = new Protocol();
 maplibregl.addProtocol('pmtiles', protocol.tile);
@@ -176,6 +179,10 @@ export default function GamePage() {
   return (
     <div style={{ position: 'relative', width: '100%', height: '100vh' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+
+      <ModeBanner />
+      <GameHUD />
+      <Leaderboard />
 
       {/* Challenge card */}
       {selectedChallenge && (
