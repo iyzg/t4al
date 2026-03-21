@@ -57,12 +57,7 @@ export default function JoinPage() {
   }
 
   async function handleJoinTeam(team: TeamRow) {
-    const store = useGameStore.getState();
-    useGameStore.setState({
-      gameId: game!.id,
-      teamId: team.id,
-      teamColor: team.color,
-    });
+    useGameStore.getState().setIdentity(game!.id, team.id, team.color);
 
     socket.connect();
     socket.emit('game:join', { gameId: game!.id, teamId: team.id });

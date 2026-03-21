@@ -30,8 +30,11 @@ export interface GameStore {
   // Actions
   challengeSpawned: (challenge: Challenge) => void;
   challengeClaimed: (challengeId: string, claimedByTeamId: string) => void;
-  leaderboardUpdated: (teams: LeaderboardEntry[], mode: LeaderboardMode) => void
+  leaderboardUpdated: (teams: LeaderboardEntry[], mode: LeaderboardMode) => void;
   modeChanged: (mode: LeaderboardMode, segmentMode: SegmentMode | null) => void;
+  setActiveChallengeId: (id: string | null) => void;
+  setGameStatus: (status: GameStatus) => void;
+  setIdentity: (gameId: string, teamId: string, teamColor: string) => void;
 }
 
 export const useGameStore = create<GameStore>()((set) => ({
@@ -70,6 +73,9 @@ export const useGameStore = create<GameStore>()((set) => ({
   modeChanged: (mode, segmentMode) => set(() => ({
     leaderboardMode: mode,
     segmentMode: segmentMode,
-
   })),
+
+  setActiveChallengeId: (id) => set(() => ({ activeChallengeId: id })),
+  setGameStatus: (status) => set(() => ({ gameStatus: status })),
+  setIdentity: (gameId, teamId, teamColor) => set(() => ({ gameId, teamId, teamColor })),
 }));
