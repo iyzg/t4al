@@ -409,24 +409,24 @@ Built from `LocationHistory` + challenge events:
    3.2. [x] `migrate.ts` — migration runner
    3.3. [x] `001_initial.sql` — schema (games, teams, challenges, segments, location_history, game_events)
    3.4. [x] `002_simplify.sql` — apply spec changes (drop team_challenge_states, add active_challenge_id to teams, simplify challenges/segments)
-4. [ ] **Server core**
+4. [x] **Server core**
    4.1. [x] Express app + HTTP server setup
    4.2. [x] Socket.io attach to HTTP server
-   4.3. [x] Game routes — create game, get game, start game, end game
+   4.3. [x] Game routes — create game, get game, start game, end game + join code lookup
    4.4. [x] Team routes — create team, list teams
-   4.5. [ ] Challenge routes — CRUD, claim
-   4.6. [ ] Socket event handlers — location, challenge actions, join
-   4.7. [ ] Background ticker — challenge spawning, mode transitions
-5. [ ] **Client core**
-   5.1. [ ] Vite + React + TypeScript scaffold
-   5.2. [ ] MapLibre GL JS + PMTiles rendering
-   5.3. [ ] Custom map style
-   5.4. [ ] Socket.io client connection
-   5.5. [ ] Zustand store setup
-6. [ ] **Join flow** (end-to-end)
-   6.1. [ ] `/join` page — enter join code
-   6.2. [ ] Lobby UI — see teams, create team, join team
-   6.3. [ ] Server: join API + socket room management
+   4.5. [x] Challenge routes — CRUD, claim
+   4.6. [x] Socket event handlers — location, challenge actions, join
+   4.7. [x] Background ticker — challenge spawning, mode transitions
+5. [x] **Client core**
+   5.1. [x] Vite + React + TypeScript scaffold
+   5.2. [x] MapLibre GL JS + PMTiles rendering (local chicago.pmtiles)
+   5.3. [x] Custom dark map style
+   5.4. [x] Socket.io client connection (autoConnect: false)
+   5.5. [x] Zustand store setup + socket event handlers wired
+6. [x] **Join flow** (end-to-end)
+   6.1. [x] `/join` page — enter join code
+   6.2. [x] Lobby UI — see teams, create team, join team
+   6.3. [x] Server: join API + socket room management
    6.4. [ ] Admin starts game → all clients transition to map
 7. [ ] **Challenge system**
    7.1. [ ] Admin challenge creation UI (click map → popover)
