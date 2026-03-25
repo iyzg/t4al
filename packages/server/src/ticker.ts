@@ -11,6 +11,7 @@ export function startTicker(io: Server) {
     try {
       await spawnChallenges(io);
       await checkModeTransitions(io);
+      await checkGameExpiration(io);
     } catch (err) {
       console.error('Ticker error:', err);
     }
@@ -35,6 +36,20 @@ async function spawnChallenges(io: Server) {
     const challenge = mapChallenge(row);
     io.to(row.game_id).emit('challenge:spawned', { challenge });
     console.log(`challenge spawned: ${row.name} in game ${row.game_id}`);
+  }
+}
+
+async function checkGameExpiration(io: Server) {
+  const result = await pool.query(
+    `UPDATE games SET status = 'ended'
+     WHERE status = 'active' AND end_time IS NOT NULL AND NOW() >= end_time
+     RETURNING id`,
+  );
+
+  for (const game of result.rows) {
+    io.to(game.id).emit('game:ended', {});
+    currentModes.delete(game.id);
+    console.log(`game auto-ended: ${game.id}`);
   }
 }
 
