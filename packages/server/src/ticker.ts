@@ -54,6 +54,10 @@ async function checkGameExpiration(io: Server) {
   for (const game of result.rows) {
     io.to(game.id).emit('game:ended', {});
     currentModes.delete(game.id);
+    pool.query(
+      `INSERT INTO game_events (game_id, type, payload) VALUES ($1, 'game:ended', '{"reason":"timer"}')`,
+      [game.id],
+    ).catch((err: any) => console.error('Failed to log auto-end event:', err));
     console.log(`game auto-ended: ${game.id}`);
   }
 }
