@@ -207,9 +207,18 @@ export function registerSocketHandlers(io: Server) {
         }
 
         const challenge = result.rows[0];
+
+        // Award points and clear active challenge for the completing team
         await client.query(
           'UPDATE teams SET score = score + $1, active_challenge_id = NULL WHERE id = $2',
           [challenge.points, data.teamId],
+        );
+
+        // Clear active_challenge_id for ALL other teams that had this challenge active
+        // (prevents them from being stuck after another team claims it)
+        await client.query(
+          'UPDATE teams SET active_challenge_id = NULL WHERE active_challenge_id = $1 AND id != $2',
+          [data.challengeId, data.teamId],
         );
 
         await client.query('COMMIT');
