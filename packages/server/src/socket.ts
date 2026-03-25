@@ -63,6 +63,10 @@ export function registerSocketHandlers(io: Server) {
     // ── game:join ──
     socket.on('game:join', async (data) => {
       if (!data?.gameId || !data?.teamId) return;
+      // Leave previous game room if switching games
+      if (socket.data.gameId && socket.data.gameId !== data.gameId) {
+        socket.leave(socket.data.gameId);
+      }
       socket.join(data.gameId);
       socket.data.gameId = data.gameId;
       socket.data.teamId = data.teamId;
