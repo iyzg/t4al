@@ -13,11 +13,13 @@ export default function GameHUD() {
   useEffect(() => {
     if (!gameId) return;
     fetch(`/api/games/${gameId}`)
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : null)
       .then((g) => {
+        if (!g) return;
         setGameName(g.name);
         if (g.end_time) setEndTime(new Date(g.end_time));
-      });
+      })
+      .catch(() => {});
   }, [gameId, gameStatus]);
 
   // Countdown timer

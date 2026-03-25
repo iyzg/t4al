@@ -15,13 +15,15 @@ export default function EndPage() {
 
   useEffect(() => {
     fetch(`/api/games/${gameId}`)
-      .then((r) => r.json())
-      .then((g) => setGameName(g.name));
+      .then((r) => r.ok ? r.json() : null)
+      .then((g) => { if (g) setGameName(g.name); })
+      .catch(() => {});
     fetch(`/api/games/${gameId}/teams`)
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : [])
       .then((rows: TeamResult[]) => {
-        setTeams(rows.sort((a, b) => b.score - a.score));
-      });
+        if (Array.isArray(rows)) setTeams(rows.sort((a, b) => b.score - a.score));
+      })
+      .catch(() => {});
   }, [gameId]);
 
   return (
