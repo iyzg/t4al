@@ -121,16 +121,29 @@ export function registerSocketHandlers(io: Server) {
     });
 
     // ── challenge:activate ──
+    // Uses atomic UPDATE to avoid race conditions (two rapid activates)
+    // and validates that the challenge exists and is active
     socket.on('challenge:activate', async (data) => {
       if (!data?.challengeId || !data?.teamId) return;
       try {
-        const team = await pool.query('SELECT active_challenge_id FROM teams WHERE id = $1', [data.teamId]);
-        if (!team.rows[0]) return;
-        if (team.rows[0].active_challenge_id) {
+        // Verify the challenge is active
+        const challenge = await pool.query(
+          `SELECT id FROM challenges WHERE id = $1 AND status = 'active'`,
+          [data.challengeId],
+        );
+        if (challenge.rows.length === 0) {
           socket.emit('complete:failed', { challengeId: data.challengeId, reason: 'not_active' as const });
           return;
         }
-        await pool.query('UPDATE teams SET active_challenge_id = $1 WHERE id = $2', [data.challengeId, data.teamId]);
+
+        // Atomic: only set active_challenge_id if it's currently NULL
+        const result = await pool.query(
+          `UPDATE teams SET active_challenge_id = $1 WHERE id = $2 AND active_challenge_id IS NULL RETURNING id`,
+          [data.challengeId, data.teamId],
+        );
+        if (result.rows.length === 0) {
+          socket.emit('complete:failed', { challengeId: data.challengeId, reason: 'not_active' as const });
+        }
       } catch (err) {
         console.error('challenge:activate error:', err);
       }
