@@ -16,7 +16,10 @@ export default function Leaderboard() {
         color: 'white',
         borderRadius: 8,
         padding: 12,
-        minWidth: 160,
+        minWidth: 140,
+        maxHeight: 'calc(100vh - 160px)',
+        overflow: 'auto',
+        zIndex: 4,
       }}
     >
       <h4 style={{ margin: '0 0 8px 0', fontSize: 14, opacity: 0.7 }}>Leaderboard</h4>

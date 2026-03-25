@@ -242,17 +242,17 @@ export default function GamePage() {
             </p>
           ) : isMyActive ? (
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <button onClick={handleComplete} style={{ flex: 1, padding: 10, background: '#2ecc71', border: 'none', borderRadius: 6, color: 'white', fontWeight: 'bold' }}>
+              <button onClick={handleComplete} style={{ flex: 1, padding: '12px 10px', background: '#2ecc71', border: 'none', borderRadius: 6, color: 'white', fontWeight: 'bold', fontSize: 15 }}>
                 Mark Complete
               </button>
-              <button onClick={handleAbandon} style={{ flex: 1, padding: 10, background: '#e74c3c', border: 'none', borderRadius: 6, color: 'white' }}>
+              <button onClick={handleAbandon} style={{ flex: 1, padding: '12px 10px', background: '#e74c3c', border: 'none', borderRadius: 6, color: 'white', fontSize: 15 }}>
                 Abandon
               </button>
             </div>
           ) : activeChallengeId ? (
             <p style={{ opacity: 0.6, marginTop: 8 }}>You already have an active challenge</p>
           ) : inRange ? (
-            <button onClick={handleActivate} style={{ marginTop: 12, width: '100%', padding: 10, background: '#3498db', border: 'none', borderRadius: 6, color: 'white', fontWeight: 'bold' }}>
+            <button onClick={handleActivate} style={{ marginTop: 12, width: '100%', padding: '12px 10px', background: '#3498db', border: 'none', borderRadius: 6, color: 'white', fontWeight: 'bold', fontSize: 15 }}>
               Set as Active
             </button>
           ) : (
@@ -263,7 +263,7 @@ export default function GamePage() {
 
           <button
             onClick={() => setSelectedChallengeId(null)}
-            style={{ position: 'absolute', top: 8, right: 12, background: 'none', border: 'none', color: 'white', fontSize: 18, cursor: 'pointer' }}
+            style={{ position: 'absolute', top: 4, right: 4, background: 'none', border: 'none', color: 'white', fontSize: 22, cursor: 'pointer', padding: '8px 12px', lineHeight: 1 }}
           >
             ×
           </button>
