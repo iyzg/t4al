@@ -3,11 +3,13 @@ import { useGameStore } from '../store';
 
 export default function GameHUD() {
   const gameId = useGameStore((s) => s.gameId);
+  const gameStatus = useGameStore((s) => s.gameStatus);
   const [gameName, setGameName] = useState('');
   const [endTime, setEndTime] = useState<Date | null>(null);
   const [countdown, setCountdown] = useState('');
 
-  // Fetch game info
+  // Fetch game info — re-fetch when gameStatus changes (e.g. lobby → active)
+  // so the countdown timer picks up the newly-set end_time
   useEffect(() => {
     if (!gameId) return;
     fetch(`/api/games/${gameId}`)
@@ -16,7 +18,7 @@ export default function GameHUD() {
         setGameName(g.name);
         if (g.end_time) setEndTime(new Date(g.end_time));
       });
-  }, [gameId]);
+  }, [gameId, gameStatus]);
 
   // Countdown timer
   useEffect(() => {

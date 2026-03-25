@@ -47,6 +47,10 @@ export function registerSocketHandlers() {
     console.warn('Complete failed:', data?.reason);
   });
 
+  socket.on('game:started', (_data: any) => {
+    store().setGameStatus('active');
+  });
+
   socket.on('game:ended', (_data) => {
     store().setGameStatus('ended');
   });
