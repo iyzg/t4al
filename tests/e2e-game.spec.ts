@@ -23,6 +23,21 @@ test.describe('Game Page', () => {
     await expect(page).toHaveURL('/join');
   });
 
+  test('shows waiting message in lobby', async ({ page }) => {
+    const game = (await api('POST', '/games', { name: 'Lobby Wait' })).data;
+    const team = (await api('POST', `/games/${game.id}/teams`, { name: 'Waiters', color: '#e74c3c' })).data;
+
+    await page.goto('/join');
+    await page.evaluate(({ gid, tid }) => {
+      sessionStorage.setItem('t4al_identity', JSON.stringify({
+        gameId: gid, teamId: tid, teamColor: '#e74c3c',
+      }));
+    }, { gid: game.id, tid: team.id });
+
+    await page.goto(`/game/${game.id}`);
+    await expect(page.locator('text=Waiting for game to start')).toBeVisible({ timeout: 5000 });
+  });
+
   test('shows HUD components when identity exists', async ({ page }) => {
     const game = (await api('POST', '/games', { name: 'HUD Test' })).data;
     const team = (await api('POST', `/games/${game.id}/teams`, { name: 'Testers', color: '#e74c3c' })).data;

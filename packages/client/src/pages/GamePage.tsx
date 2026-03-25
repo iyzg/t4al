@@ -214,6 +214,16 @@ export default function GamePage() {
       <GameHUD />
       <Leaderboard />
 
+      {/* Waiting banner when game hasn't started */}
+      {gameStatus !== 'active' && gameStatus !== 'ended' && Object.keys(challenges).length === 0 && (
+        <div style={{
+          position: 'absolute', bottom: 80, left: 0, right: 0,
+          textAlign: 'center', color: 'white', opacity: 0.6, fontSize: 16,
+        }}>
+          Waiting for game to start...
+        </div>
+      )}
+
       {selectedChallenge && (
         <div
           className="challenge-card"
