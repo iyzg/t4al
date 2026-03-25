@@ -23,24 +23,22 @@ router.post('/', asyncHandler(async (req, res) => {
     return;
   }
 
-  // Check if color is already taken in this game
-  const existing = await pool.query(
-    'SELECT id FROM teams WHERE game_id = $1 AND color = $2',
-    [req.params.gameId, color],
-  );
-  if (existing.rows.length > 0) {
-    res.status(409).json({ error: 'color already taken' });
-    return;
+  try {
+    const result = await pool.query(
+      `INSERT INTO teams (game_id, name, color)
+       VALUES ($1, $2, $3)
+       RETURNING *`,
+      [req.params.gameId, name, color],
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err: any) {
+    // Unique constraint violation on (game_id, color)
+    if (err.code === '23505' && err.constraint === 'teams_game_color_unique') {
+      res.status(409).json({ error: 'color already taken' });
+      return;
+    }
+    throw err; // re-throw other errors to Express error handler
   }
-
-  const result = await pool.query(
-    `INSERT INTO teams (game_id, name, color)
-     VALUES ($1, $2, $3)
-     RETURNING *`,
-    [req.params.gameId, name, color],
-  );
-
-  res.status(201).json(result.rows[0]);
 }));
 
 export default router;
