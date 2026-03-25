@@ -13,7 +13,7 @@ import { asyncHandler } from './asyncHandler.js';
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '100kb' }));
 
 // Wrap express in a raw HTTP server — Socket.io will attach to this
 const httpServer = createServer(app);
