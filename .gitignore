@@ -5,3 +5,4 @@ dist/
 anki/
 test-results/
 playwright-report/
+tests/screenshots/

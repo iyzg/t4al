@@ -47,7 +47,7 @@ export default function Leaderboard() {
             />
             <span>{entry.name}</span>
           </div>
-          {mode === 'full' && <span style={{ fontWeight: 'bold' }}>{entry.score}</span>}
+          {mode === 'full' && <span style={{ fontWeight: 'bold', marginLeft: 12 }}>{entry.score}</span>}
         </div>
       ))}
       {leaderboard.length === 0 && <p style={{ opacity: 0.5, fontSize: 13, margin: 0 }}>No scores yet</p>}
