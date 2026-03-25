@@ -14,12 +14,36 @@ export function getMapStyle(): maplibregl.StyleSpecification {
       },
     },
     layers: [
-      { id: 'bg', type: 'background', paint: { 'background-color': '#1a1a2e' } },
-      { id: 'earth', type: 'fill', source: src, 'source-layer': 'earth', paint: { 'fill-color': '#1e1e36' } },
-      { id: 'landuse', type: 'fill', source: src, 'source-layer': 'landuse', paint: { 'fill-color': '#1f1f38', 'fill-opacity': 0.5 } },
-      { id: 'water', type: 'fill', source: src, 'source-layer': 'water', paint: { 'fill-color': '#16213e' } },
-      { id: 'buildings', type: 'fill', source: src, 'source-layer': 'buildings', paint: { 'fill-color': '#24244a', 'fill-opacity': 0.7 } },
-      { id: 'roads', type: 'line', source: src, 'source-layer': 'roads', paint: { 'line-color': '#2a2a4a', 'line-width': 1.2 } },
+      // ── base ──
+      { id: 'bg', type: 'background', paint: { 'background-color': '#f5f0e8' } },
+      { id: 'earth', type: 'fill', source: src, 'source-layer': 'earth',
+        paint: { 'fill-color': '#f0ebe3' } },
+      { id: 'landcover', type: 'fill', source: src, 'source-layer': 'landcover',
+        paint: { 'fill-color': '#e3e8d8', 'fill-opacity': 0.6 } },
+      { id: 'landuse', type: 'fill', source: src, 'source-layer': 'landuse',
+        paint: { 'fill-color': '#e8e4da', 'fill-opacity': 0.5 } },
+      { id: 'water', type: 'fill', source: src, 'source-layer': 'water',
+        paint: { 'fill-color': '#bdd5e8' } },
+
+      // ── buildings — very subtle ──
+      { id: 'buildings', type: 'fill', source: src, 'source-layer': 'buildings',
+        paint: { 'fill-color': '#e6e1d9', 'fill-opacity': 0.6 } },
+
+      // ── roads — light gray streets ──
+      { id: 'roads-minor', type: 'line', source: src, 'source-layer': 'roads',
+        filter: ['all', ['!in', 'kind', 'highway', 'major_road', 'rail']],
+        paint: { 'line-color': '#ddd8d0', 'line-width': 0.8 } },
+      { id: 'roads-major', type: 'line', source: src, 'source-layer': 'roads',
+        filter: ['==', 'kind', 'major_road'],
+        paint: { 'line-color': '#d0cbc3', 'line-width': 1.5 } },
+      { id: 'roads-highway', type: 'line', source: src, 'source-layer': 'roads',
+        filter: ['==', 'kind', 'highway'],
+        paint: { 'line-color': '#c8c3bb', 'line-width': 2 } },
+
+      // ── transit lines — subtle ──
+      { id: 'rail', type: 'line', source: src, 'source-layer': 'roads',
+        filter: ['==', 'kind', 'rail'],
+        paint: { 'line-color': '#c8c0b8', 'line-width': 2, 'line-dasharray': [4, 2] } },
     ],
   };
 }

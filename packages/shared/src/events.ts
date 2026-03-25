@@ -82,7 +82,12 @@ export interface ClientToServerEvents {
 
 // ── Server → Client events ──
 
+export interface ActiveRestorePayload {
+  challengeId: string;
+}
+
 export interface ServerToClientEvents {
+  'active:restore': (data: ActiveRestorePayload) => void;
   'challenge:claimed': (data: ChallengeClaimedPayload) => void;
   'challenge:left': (data: ChallengeLeftPayload) => void;
   'challenge:spawned': (data: ChallengeSpawnedPayload) => void;

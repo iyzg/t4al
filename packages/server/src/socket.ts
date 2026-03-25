@@ -1,6 +1,25 @@
 import type { Server, Socket } from 'socket.io';
 import pool from './db/pool.js';
 
+// Map a raw SQL challenge row to camelCase for the client
+export function mapChallenge(row: any) {
+  return {
+    id: row.id,
+    gameId: row.game_id,
+    name: row.name,
+    description: row.description,
+    points: row.points,
+    lat: row.lat,
+    lng: row.lng,
+    proximityMeters: row.proximity_meters,
+    spawnOffsetMinutes: row.spawn_offset_minutes,
+    status: row.status,
+    spawnedAt: row.spawned_at,
+    claimedByTeamId: row.claimed_by_team_id,
+    claimedAt: row.claimed_at,
+  };
+}
+
 // In-memory store for current team positions (used for proximity checks)
 const currentPositions = new Map<string, { lat: number; lng: number; updatedAt: Date }>();
 
@@ -30,12 +49,57 @@ export function registerSocketHandlers(io: Server) {
     console.log('client connected:', socket.id);
 
     // ── game:join ──
-    socket.on('game:join', (data) => {
+    socket.on('game:join', async (data) => {
       if (!data?.gameId || !data?.teamId) return;
       socket.join(data.gameId);
       socket.data.gameId = data.gameId;
       socket.data.teamId = data.teamId;
       console.log(`team ${data.teamId} joined game ${data.gameId}`);
+
+      // Send current challenges (active + claimed) so late joiners see existing state
+      try {
+        const challengeResult = await pool.query(
+          `SELECT * FROM challenges WHERE game_id = $1 AND status IN ('active', 'claimed')`,
+          [data.gameId],
+        );
+        for (const row of challengeResult.rows) {
+          socket.emit('challenge:spawned', { challenge: mapChallenge(row) });
+        }
+
+        // Send current leaderboard
+        const teamResult = await pool.query(
+          `SELECT id, name, color, score FROM teams WHERE game_id = $1 ORDER BY score DESC`,
+          [data.gameId],
+        );
+        const gameResult = await pool.query(
+          `SELECT leaderboard_mode, status FROM games WHERE id = $1`,
+          [data.gameId],
+        );
+        const gameRow = gameResult.rows[0];
+        const mode = gameRow?.leaderboard_mode ?? 'full';
+        socket.emit('leaderboard:update', {
+          teams: teamResult.rows.map((t: any, i: number) => ({
+            id: t.id, name: t.name, color: t.color, score: t.score, rank: i + 1,
+          })),
+          mode,
+        });
+
+        // Restore this team's active challenge (if any)
+        const myTeam = await pool.query(
+          `SELECT active_challenge_id FROM teams WHERE id = $1`,
+          [data.teamId],
+        );
+        if (myTeam.rows[0]?.active_challenge_id) {
+          socket.emit('active:restore', { challengeId: myTeam.rows[0].active_challenge_id });
+        }
+
+        // If game already ended, tell the client immediately
+        if (gameRow?.status === 'ended') {
+          socket.emit('game:ended', {});
+        }
+      } catch (err) {
+        console.error('Failed to send initial state:', err);
+      }
     });
 
     // ── location:update ──
@@ -124,6 +188,22 @@ export function registerSocketHandlers(io: Server) {
             claimedByTeamId: data.teamId,
             claimedByTeamName: teamName,
             points: challenge.points,
+          });
+
+          // Send updated leaderboard to all clients in the game
+          const allTeams = await pool.query(
+            `SELECT id, name, color, score FROM teams WHERE game_id = $1 ORDER BY score DESC`,
+            [socket.data.gameId],
+          );
+          const gameRow = await pool.query(
+            `SELECT leaderboard_mode FROM games WHERE id = $1`,
+            [socket.data.gameId],
+          );
+          io.to(socket.data.gameId).emit('leaderboard:update', {
+            teams: allTeams.rows.map((t: any, i: number) => ({
+              id: t.id, name: t.name, color: t.color, score: t.score, rank: i + 1,
+            })),
+            mode: gameRow.rows[0]?.leaderboard_mode ?? 'full',
           });
         }
       } catch (err) {

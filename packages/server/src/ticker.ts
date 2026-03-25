@@ -1,6 +1,7 @@
 import type { Server } from 'socket.io';
 import pool from './db/pool.js';
 import { TICKER_INTERVAL_MS } from '@t4al/shared';
+import { mapChallenge } from './socket.js';
 
 // Track current mode per game so we only broadcast on change
 const currentModes = new Map<string, string | null>();
@@ -29,10 +30,11 @@ async function spawnChallenges(io: Server) {
      RETURNING c.*, g.id AS game_id`,
   );
 
-  // Broadcast each spawned challenge to its game room
-  for (const challenge of result.rows) {
-    io.to(challenge.game_id).emit('challenge:spawned', { challenge });
-    console.log(`challenge spawned: ${challenge.name} in game ${challenge.game_id}`);
+  // Broadcast each spawned challenge to its game room (camelCase for client)
+  for (const row of result.rows) {
+    const challenge = mapChallenge(row);
+    io.to(row.game_id).emit('challenge:spawned', { challenge });
+    console.log(`challenge spawned: ${row.name} in game ${row.game_id}`);
   }
 }
 

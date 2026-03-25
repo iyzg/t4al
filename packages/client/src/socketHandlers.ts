@@ -50,4 +50,19 @@ export function registerSocketHandlers() {
   socket.on('game:ended', (_data) => {
     store().setGameStatus('ended');
   });
+
+  // Restore active challenge on (re)join
+  socket.on('active:restore', (data) => {
+    if (data?.challengeId) {
+      store().setActiveChallengeId(data.challengeId);
+    }
+  });
+
+  // Auto-rejoin game room after socket reconnects (network blip, server restart)
+  socket.on('connect', () => {
+    const { gameId, teamId } = store();
+    if (gameId && teamId) {
+      socket.emit('game:join', { gameId, teamId });
+    }
+  });
 }

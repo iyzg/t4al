@@ -3,18 +3,20 @@ import JoinPage from './pages/JoinPage';
 import GamePage from './pages/GamePage';
 import AdminSetupPage from './pages/AdminSetupPage';
 import AdminLivePage from './pages/AdminLivePage';
+import CreateGamePage from './pages/CreateGamePage';
 import EndPage from './pages/EndPage';
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/" element={<CreateGamePage />} />
         <Route path="/join" element={<JoinPage />} />
         <Route path="/game/:gameId" element={<GamePage />} />
         <Route path="/game/:gameId/admin/setup" element={<AdminSetupPage />} />
         <Route path="/game/:gameId/admin" element={<AdminLivePage />} />
         <Route path="/game/:gameId/end" element={<EndPage />} />
-        <Route path="*" element={<Navigate to="/join" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );

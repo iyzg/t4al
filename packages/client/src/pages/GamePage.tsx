@@ -40,8 +40,11 @@ export default function GamePage() {
   const teamColor = useGameStore((s) => s.teamColor);
   const gameId = useGameStore((s) => s.gameId);
 
-  const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
+  const [selectedChallengeId, setSelectedChallengeId] = useState<string | null>(null);
   const [myPos, setMyPos] = useState<{ lat: number; lng: number } | null>(null);
+
+  // Derive selectedChallenge from store so it's always fresh
+  const selectedChallenge = selectedChallengeId ? challenges[selectedChallengeId] ?? null : null;
 
   // Restore identity from sessionStorage on refresh
   useEffect(() => {
@@ -155,14 +158,18 @@ export default function GamePage() {
       const existing = markersRef.current.get(c.id);
       if (existing) {
         existing.setLngLat([c.lng, c.lat]);
+        // Update style (individual props to preserve MapLibre's transform)
+        applyMarkerStyle(existing.getElement(), c, activeChallengeId, teamId);
         return;
       }
 
       const el = document.createElement('div');
-      el.style.cssText = getMarkerStyle(c, activeChallengeId, teamId);
+      applyMarkerStyle(el, c, activeChallengeId, teamId);
       el.addEventListener('click', (e) => {
         e.stopPropagation();
-        setSelectedChallenge(c);
+        // Read latest from store to avoid stale closure
+        const fresh = useGameStore.getState().challenges[c.id];
+        setSelectedChallengeId(c.id);
       });
       const marker = new maplibregl.Marker({ element: el }).setLngLat([c.lng, c.lat]).addTo(map);
       markersRef.current.set(c.id, marker);
@@ -179,7 +186,7 @@ export default function GamePage() {
     if (!activeChallengeId || !teamId) return;
     socket.emit('challenge:abandon', { challengeId: activeChallengeId, teamId });
     useGameStore.getState().setActiveChallengeId(null);
-    setSelectedChallenge(null);
+    setSelectedChallengeId(null);
   }, [activeChallengeId, teamId]);
 
   const handleComplete = useCallback(() => {
@@ -251,7 +258,7 @@ export default function GamePage() {
           )}
 
           <button
-            onClick={() => setSelectedChallenge(null)}
+            onClick={() => setSelectedChallengeId(null)}
             style={{ position: 'absolute', top: 8, right: 12, background: 'none', border: 'none', color: 'white', fontSize: 18, cursor: 'pointer' }}
           >
             ×
@@ -262,16 +269,34 @@ export default function GamePage() {
   );
 }
 
-function getMarkerStyle(challenge: Challenge, activeChallengeId: string | null, teamId: string | null): string {
-  const base = 'width:20px;height:20px;border-radius:50%;cursor:pointer;';
+/** Apply marker style using individual properties (not cssText) to preserve MapLibre's transform. */
+function applyMarkerStyle(el: HTMLElement, challenge: Challenge, activeChallengeId: string | null, teamId: string | null) {
+  el.style.width = '20px';
+  el.style.height = '20px';
+  el.style.borderRadius = '50%';
+  el.style.cursor = 'pointer';
+
   if (challenge.status === 'claimed') {
     if (challenge.claimedByTeamId === teamId) {
-      return base + 'background:#2ecc71;border:2px solid white;opacity:0.8;';
+      el.style.background = '#2ecc71';
+      el.style.border = '2px solid white';
+      el.style.opacity = '0.8';
+      el.style.boxShadow = 'none';
+    } else {
+      el.style.background = '#666';
+      el.style.border = '2px solid #999';
+      el.style.opacity = '0.5';
+      el.style.boxShadow = 'none';
     }
-    return base + 'background:#666;border:2px solid #999;opacity:0.5;';
+  } else if (challenge.id === activeChallengeId) {
+    el.style.background = '#3498db';
+    el.style.border = '3px solid white';
+    el.style.boxShadow = '0 0 10px #3498db';
+    el.style.opacity = '1';
+  } else {
+    el.style.background = '#f39c12';
+    el.style.border = '2px solid white';
+    el.style.boxShadow = 'none';
+    el.style.opacity = '1';
   }
-  if (challenge.id === activeChallengeId) {
-    return base + 'background:#3498db;border:3px solid white;box-shadow:0 0 10px #3498db;';
-  }
-  return base + 'background:#f39c12;border:2px solid white;';
 }

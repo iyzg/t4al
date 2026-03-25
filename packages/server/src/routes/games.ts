@@ -54,6 +54,35 @@ router.get('/:id', asyncHandler(async (req, res) => {
   res.json(result.rows[0]);
 }));
 
+// PUT /api/games/:id — update game settings
+router.put('/:id', asyncHandler(async (req, res) => {
+  const { name, durationMinutes } = req.body;
+  const fields: string[] = [];
+  const values: any[] = [];
+  let i = 1;
+
+  if (name !== undefined) { fields.push(`name = $${i++}`); values.push(name); }
+  if (durationMinutes !== undefined) { fields.push(`duration_minutes = $${i++}`); values.push(durationMinutes); }
+
+  if (fields.length === 0) {
+    res.status(400).json({ error: 'nothing to update' });
+    return;
+  }
+
+  values.push(req.params.id);
+  const result = await pool.query(
+    `UPDATE games SET ${fields.join(', ')} WHERE id = $${i} RETURNING *`,
+    values,
+  );
+
+  if (result.rows.length === 0) {
+    res.status(404).json({ error: 'game not found' });
+    return;
+  }
+
+  res.json(result.rows[0]);
+}));
+
 // POST /api/games/:id/start — admin starts the game
 router.post('/:id/start', asyncHandler(async (req, res) => {
   const result = await pool.query(
