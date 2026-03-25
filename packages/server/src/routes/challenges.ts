@@ -2,6 +2,7 @@ import { Router } from 'express';
 import pool from '../db/pool.js';
 import { asyncHandler } from '../asyncHandler.js';
 import { MIN_PROXIMITY_METERS, MAX_PROXIMITY_METERS } from '@t4al/shared';
+import { getLeaderboard } from '../socket.js';
 
 const router = Router({ mergeParams: true });
 
@@ -131,17 +132,8 @@ router.post('/:id/claim', asyncHandler(async (req, res) => {
         points: challenge.points,
       });
       // Send updated leaderboard
-      const allTeams = await pool.query(
-        'SELECT id, name, color, score FROM teams WHERE game_id = $1 ORDER BY score DESC',
-        [challenge.game_id],
-      );
-      const gameRow = await pool.query('SELECT leaderboard_mode FROM games WHERE id = $1', [challenge.game_id]);
-      io.to(challenge.game_id).emit('leaderboard:update', {
-        teams: allTeams.rows.map((t: any, i: number) => ({
-          id: t.id, name: t.name, color: t.color, score: t.score, rank: i + 1,
-        })),
-        mode: gameRow.rows[0]?.leaderboard_mode ?? 'full',
-      });
+      const leaderboard = await getLeaderboard(challenge.game_id);
+      io.to(challenge.game_id).emit('leaderboard:update', leaderboard);
     }
 
     res.json(challenge);

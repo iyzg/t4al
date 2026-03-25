@@ -20,6 +20,20 @@ export function mapChallenge(row: any) {
   };
 }
 
+/** Build leaderboard data for a game */
+export async function getLeaderboard(gameId: string) {
+  const [teamResult, gameResult] = await Promise.all([
+    pool.query('SELECT id, name, color, score FROM teams WHERE game_id = $1 ORDER BY score DESC', [gameId]),
+    pool.query('SELECT leaderboard_mode FROM games WHERE id = $1', [gameId]),
+  ]);
+  return {
+    teams: teamResult.rows.map((t: any, i: number) => ({
+      id: t.id, name: t.name, color: t.color, score: t.score, rank: i + 1,
+    })),
+    mode: gameResult.rows[0]?.leaderboard_mode ?? 'full',
+  };
+}
+
 /** Log a game event for the admin event log */
 async function logEvent(gameId: string, type: string, payload: Record<string, unknown> = {}) {
   try {
@@ -84,22 +98,12 @@ export function registerSocketHandlers(io: Server) {
         }
 
         // Send current leaderboard
-        const teamResult = await pool.query(
-          `SELECT id, name, color, score FROM teams WHERE game_id = $1 ORDER BY score DESC`,
-          [data.gameId],
-        );
-        const gameResult = await pool.query(
-          `SELECT leaderboard_mode, status FROM games WHERE id = $1`,
-          [data.gameId],
-        );
+        const leaderboard = await getLeaderboard(data.gameId);
+        socket.emit('leaderboard:update', leaderboard);
+
+        // Get game status for later checks
+        const gameResult = await pool.query(`SELECT status FROM games WHERE id = $1`, [data.gameId]);
         const gameRow = gameResult.rows[0];
-        const mode = gameRow?.leaderboard_mode ?? 'full';
-        socket.emit('leaderboard:update', {
-          teams: teamResult.rows.map((t: any, i: number) => ({
-            id: t.id, name: t.name, color: t.color, score: t.score, rank: i + 1,
-          })),
-          mode,
-        });
 
         // Restore this team's active challenge (if any)
         const myTeam = await pool.query(
@@ -269,20 +273,8 @@ export function registerSocketHandlers(io: Server) {
           });
 
           // Send updated leaderboard to all clients in the game
-          const allTeams = await pool.query(
-            `SELECT id, name, color, score FROM teams WHERE game_id = $1 ORDER BY score DESC`,
-            [socket.data.gameId],
-          );
-          const gameRow = await pool.query(
-            `SELECT leaderboard_mode FROM games WHERE id = $1`,
-            [socket.data.gameId],
-          );
-          io.to(socket.data.gameId).emit('leaderboard:update', {
-            teams: allTeams.rows.map((t: any, i: number) => ({
-              id: t.id, name: t.name, color: t.color, score: t.score, rank: i + 1,
-            })),
-            mode: gameRow.rows[0]?.leaderboard_mode ?? 'full',
-          });
+          const leaderboard = await getLeaderboard(socket.data.gameId);
+          io.to(socket.data.gameId).emit('leaderboard:update', leaderboard);
         }
       } catch (err) {
         await client.query('ROLLBACK').catch(() => {});
