@@ -52,7 +52,7 @@ export function registerSocketHandlers() {
     }
   });
 
-  socket.on('game:started', (_data: any) => {
+  socket.on('game:started', () => {
     store().setGameStatus('active');
   });
 
