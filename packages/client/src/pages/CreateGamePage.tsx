@@ -6,11 +6,14 @@ export default function CreateGamePage() {
   const [name, setName] = useState('');
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [error, setError] = useState('');
+  const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<{ id: string; joinCode: string; adminCode: string } | null>(null);
 
   async function handleCreate() {
     setError('');
     if (!name.trim()) { setError('Game name is required'); return; }
+    if (creating) return;
+    setCreating(true);
 
     const res = await fetch('/api/games', {
       method: 'POST',
@@ -18,7 +21,7 @@ export default function CreateGamePage() {
       body: JSON.stringify({ name, durationMinutes }),
     });
 
-    if (!res.ok) { setError('Failed to create game'); return; }
+    if (!res.ok) { setCreating(false); setError('Failed to create game'); return; }
     const data = await res.json();
     setCreated({ id: data.id, joinCode: data.join_code, adminCode: data.admin_code });
   }
@@ -79,9 +82,10 @@ export default function CreateGamePage() {
 
       <button
         onClick={handleCreate}
-        style={{ padding: '0.75rem 1.5rem', fontSize: '1.1rem', background: '#3498db', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+        disabled={creating}
+        style={{ padding: '0.75rem 1.5rem', fontSize: '1.1rem', background: '#3498db', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', opacity: creating ? 0.5 : 1 }}
       >
-        Create Game
+        {creating ? 'Creating...' : 'Create Game'}
       </button>
     </div>
   );
