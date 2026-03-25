@@ -42,7 +42,7 @@ export interface ModeChangePayload {
 }
 
 export interface GameEndedPayload {
-  finalScores: LeaderboardEntry[];
+  finalScores?: LeaderboardEntry[];
 }
 
 export interface ChallengeUnlockedPayload {
