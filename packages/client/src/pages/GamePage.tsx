@@ -229,9 +229,9 @@ export default function GamePage() {
             margin: '0 auto',
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingRight: 32 }}>
             <h3 style={{ margin: 0 }}>{selectedChallenge.name}</h3>
-            <span style={{ fontWeight: 'bold', color: '#f39c12' }}>{selectedChallenge.points} pts</span>
+            <span style={{ fontWeight: 'bold', color: '#f39c12', whiteSpace: 'nowrap' }}>{selectedChallenge.points} pts</span>
           </div>
 
           {isMyActive && <p style={{ marginTop: 8, opacity: 0.8 }}>{selectedChallenge.description}</p>}
