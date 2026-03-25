@@ -28,7 +28,26 @@ export default function JoinPage() {
   const [game, setGame] = useState<GameRow | null>(null);
   const [teams, setTeams] = useState<TeamRow[]>([]);
   const [newTeamName, setNewTeamName] = useState('');
-  const [selectedColor, setSelectedColor] = useState(TEAM_COLORS[0]);
+  const [selectedColor, setSelectedColor] = useState<string | null>(null);
+
+  // Colors already taken by existing teams
+  const takenColors = new Set(teams.map((t) => t.color));
+  const availableColors = TEAM_COLORS.filter((c) => !takenColors.has(c));
+
+  async function refreshTeams() {
+    if (!game) return;
+    const res = await fetch(`/api/games/${game.id}/teams`);
+    if (res.ok) {
+      const fresh = await res.json();
+      setTeams(fresh);
+      // If selected color was taken, pick the first available
+      const taken = new Set(fresh.map((t: TeamRow) => t.color));
+      if (selectedColor && taken.has(selectedColor)) {
+        const next = TEAM_COLORS.find((c) => !taken.has(c)) ?? null;
+        setSelectedColor(next);
+      }
+    }
+  }
 
   async function handleJoinCode() {
     setError('');
@@ -42,11 +61,17 @@ export default function JoinPage() {
 
     // Fetch existing teams
     const teamsRes = await fetch(`/api/games/${gameData.id}/teams`);
-    setTeams(await teamsRes.json());
+    const teamsList = await teamsRes.json();
+    setTeams(teamsList);
+
+    // Auto-select first available color
+    const taken = new Set(teamsList.map((t: TeamRow) => t.color));
+    setSelectedColor(TEAM_COLORS.find((c) => !taken.has(c)) ?? null);
   }
 
   async function handleCreateTeam() {
-    if (!newTeamName.trim()) return;
+    if (!newTeamName.trim() || !selectedColor) return;
+    setError('');
     const res = await fetch(`/api/games/${game!.id}/teams`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -55,6 +80,8 @@ export default function JoinPage() {
     if (!res.ok) {
       const err = await res.json().catch(() => null);
       setError(err?.error || 'Failed to create team');
+      // Refresh teams to get the latest taken colors
+      await refreshTeams();
       return;
     }
     const data = await res.json();
@@ -108,33 +135,39 @@ export default function JoinPage() {
         </div>
       ))}
 
-      <h2>Create Team</h2>
-      <input
-        value={newTeamName}
-        onChange={(e) => setNewTeamName(e.target.value)}
-        placeholder="Team name"
-        style={{ fontSize: '1rem', padding: '0.5rem', width: '100%', boxSizing: 'border-box' }}
-      />
-      <div style={{ display: 'flex', gap: '0.5rem', margin: '0.5rem 0', flexWrap: 'wrap' }}>
-        {TEAM_COLORS.map((c) => (
-          <button
-            key={c}
-            onClick={() => setSelectedColor(c)}
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: '50%',
-              background: c,
-              border: c === selectedColor ? '3px solid white' : '3px solid transparent',
-              cursor: 'pointer',
-              padding: 0,
-            }}
+      {availableColors.length > 0 ? (
+        <>
+          <h2>Create Team</h2>
+          <input
+            value={newTeamName}
+            onChange={(e) => setNewTeamName(e.target.value)}
+            placeholder="Team name"
+            style={{ fontSize: '1rem', padding: '0.5rem', width: '100%', boxSizing: 'border-box' }}
           />
-        ))}
-      </div>
-      <button onClick={handleCreateTeam} style={{ padding: '0.5rem 1rem', fontSize: '1rem' }}>
-        Create & Join
-      </button>
+          <div style={{ display: 'flex', gap: '0.5rem', margin: '0.5rem 0', flexWrap: 'wrap' }}>
+            {availableColors.map((c) => (
+              <button
+                key={c}
+                onClick={() => setSelectedColor(c)}
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: '50%',
+                  background: c,
+                  border: c === selectedColor ? '3px solid white' : '3px solid transparent',
+                  cursor: 'pointer',
+                  padding: 0,
+                }}
+              />
+            ))}
+          </div>
+          <button onClick={handleCreateTeam} style={{ padding: '0.5rem 1rem', fontSize: '1rem' }}>
+            Create & Join
+          </button>
+        </>
+      ) : (
+        <p style={{ opacity: 0.5, marginTop: 16 }}>All colors are taken — join an existing team above.</p>
+      )}
       {error && <p style={{ color: 'red' }}>{error}</p>}
     </div>
   );

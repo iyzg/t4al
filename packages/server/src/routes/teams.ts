@@ -23,6 +23,16 @@ router.post('/', asyncHandler(async (req, res) => {
     return;
   }
 
+  // Check if color is already taken in this game
+  const existing = await pool.query(
+    'SELECT id FROM teams WHERE game_id = $1 AND color = $2',
+    [req.params.gameId, color],
+  );
+  if (existing.rows.length > 0) {
+    res.status(409).json({ error: 'color already taken' });
+    return;
+  }
+
   const result = await pool.query(
     `INSERT INTO teams (game_id, name, color)
      VALUES ($1, $2, $3)

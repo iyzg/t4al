@@ -73,6 +73,23 @@ test.describe('Join Page', () => {
     await expect(page).toHaveURL(new RegExp(`/game/${game.id}`));
   });
 
+  test('hides taken colors in lobby', async ({ page }) => {
+    const game = await createGame('Color Test');
+    await createTeam(game.id, 'Red Team', '#e74c3c');
+
+    await page.goto('/join');
+    await page.fill('input[placeholder*="a1b2c3"]', game.join_code);
+    await page.click('button:has-text("Join Game")');
+
+    // Red color should NOT be visible as a selectable button
+    const colorButtons = page.locator('div[style*="flex-wrap"] button');
+    const count = await colorButtons.count();
+    for (let i = 0; i < count; i++) {
+      const bg = await colorButtons.nth(i).evaluate((el) => getComputedStyle(el).background);
+      expect(bg).not.toContain('rgb(231, 76, 60)'); // #e74c3c
+    }
+  });
+
   test('stores identity in sessionStorage after joining', async ({ page }) => {
     const game = await createGame('Session Test');
     await page.goto('/join');

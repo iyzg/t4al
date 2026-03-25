@@ -150,6 +150,23 @@ test.describe('Teams CRUD', () => {
     const { status } = await api('POST', `/games/${game.id}/teams`, { name: '', color: '#fff' });
     expect(status).toBe(400);
   });
+
+  test('rejects duplicate team color in same game', async () => {
+    const { data: game } = await api('POST', '/games', { name: 'Color Dupe Test' });
+    const { status: s1 } = await api('POST', `/games/${game.id}/teams`, { name: 'Team A', color: '#e74c3c' });
+    expect(s1).toBe(201);
+    const { status: s2 } = await api('POST', `/games/${game.id}/teams`, { name: 'Team B', color: '#e74c3c' });
+    expect(s2).toBe(409);
+  });
+
+  test('same color allowed in different games', async () => {
+    const { data: game1 } = await api('POST', '/games', { name: 'Game 1' });
+    const { data: game2 } = await api('POST', '/games', { name: 'Game 2' });
+    const { status: s1 } = await api('POST', `/games/${game1.id}/teams`, { name: 'Red 1', color: '#e74c3c' });
+    const { status: s2 } = await api('POST', `/games/${game2.id}/teams`, { name: 'Red 2', color: '#e74c3c' });
+    expect(s1).toBe(201);
+    expect(s2).toBe(201);
+  });
 });
 
 test.describe('Challenges CRUD', () => {
