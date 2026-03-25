@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import maplibregl from 'maplibre-gl';
 import { getMapStyle, CHICAGO_CENTER, DEFAULT_ZOOM } from '../mapStyle';
 import { ensurePmtilesProtocol } from '../mapSetup';
@@ -25,6 +26,7 @@ function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number):
 }
 
 export default function GamePage() {
+  const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
@@ -34,16 +36,37 @@ export default function GamePage() {
   const challenges = useGameStore((s) => s.challenges);
   const activeChallengeId = useGameStore((s) => s.activeChallengeId);
   const teamId = useGameStore((s) => s.teamId);
+  const gameStatus = useGameStore((s) => s.gameStatus);
   const teamColor = useGameStore((s) => s.teamColor);
   const gameId = useGameStore((s) => s.gameId);
 
   const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
   const [myPos, setMyPos] = useState<{ lat: number; lng: number } | null>(null);
 
+  // Restore identity from sessionStorage on refresh
+  useEffect(() => {
+    if (gameId && teamId) return; // already have identity
+    const saved = sessionStorage.getItem('t4al_identity');
+    if (!saved) return;
+    try {
+      const { gameId: gid, teamId: tid, teamColor: tc } = JSON.parse(saved);
+      useGameStore.getState().setIdentity(gid, tid, tc);
+      socket.connect();
+      socket.emit('game:join', { gameId: gid, teamId: tid });
+    } catch { /* ignore bad data */ }
+  }, [gameId, teamId]);
+
   // Register socket handlers once (idempotent)
   useEffect(() => {
     registerSocketHandlers();
   }, []);
+
+  // Redirect to end page when game ends
+  useEffect(() => {
+    if (gameStatus === 'ended' && gameId) {
+      navigate(`/game/${gameId}/end`);
+    }
+  }, [gameStatus, gameId, navigate]);
 
   // Start GPS tracking + heartbeat
   useEffect(() => {
@@ -77,18 +100,22 @@ export default function GamePage() {
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: getMapStyle(),
-      center: CHICAGO_CENTER,
-      zoom: DEFAULT_ZOOM,
-    });
+    try {
+      const map = new maplibregl.Map({
+        container: containerRef.current,
+        style: getMapStyle(),
+        center: CHICAGO_CENTER,
+        zoom: DEFAULT_ZOOM,
+      });
 
-    mapRef.current = map;
-    return () => {
-      map.remove();
-      mapRef.current = null;
-    };
+      mapRef.current = map;
+      return () => {
+        map.remove();
+        mapRef.current = null;
+      };
+    } catch (err) {
+      console.warn('Map failed to initialize:', err);
+    }
   }, []);
 
   // Sync my position marker
@@ -236,7 +263,7 @@ export default function GamePage() {
 }
 
 function getMarkerStyle(challenge: Challenge, activeChallengeId: string | null, teamId: string | null): string {
-  const base = 'width:20px;height:20px;border-radius:50%;cursor:pointer;transition:all 0.2s;';
+  const base = 'width:20px;height:20px;border-radius:50%;cursor:pointer;';
   if (challenge.status === 'claimed') {
     if (challenge.claimedByTeamId === teamId) {
       return base + 'background:#2ecc71;border:2px solid white;opacity:0.8;';
