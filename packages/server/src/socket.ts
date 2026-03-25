@@ -166,8 +166,14 @@ export function registerSocketHandlers(io: Server) {
     socket.on('challenge:abandon', async (data) => {
       if (!data?.challengeId || !data?.teamId) return;
       try {
-        await pool.query('UPDATE teams SET active_challenge_id = NULL WHERE id = $1', [data.teamId]);
-        socket.emit('challenge:left', { challengeId: data.challengeId });
+        // Only clear if the team actually has this challenge active
+        const result = await pool.query(
+          'UPDATE teams SET active_challenge_id = NULL WHERE id = $1 AND active_challenge_id = $2 RETURNING id',
+          [data.teamId, data.challengeId],
+        );
+        if (result.rows.length > 0) {
+          socket.emit('challenge:left', { challengeId: data.challengeId });
+        }
       } catch (err) {
         console.error('challenge:abandon error:', err);
       }
