@@ -114,7 +114,7 @@ export default function JoinPage() {
           placeholder="e.g. a1b2c3"
           style={{ fontSize: '1.2rem', padding: '0.5rem', width: '100%', boxSizing: 'border-box' }}
         />
-        <button onClick={handleJoinCode} style={{ marginTop: '1rem', padding: '0.5rem 1rem', fontSize: '1rem' }}>
+        <button onClick={handleJoinCode} style={{ marginTop: '1rem', padding: '0.75rem 1.5rem', fontSize: '1rem', background: '#3498db', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
           Join Game
         </button>
         {error && <p style={{ color: 'red' }}>{error}</p>}
@@ -134,7 +134,7 @@ export default function JoinPage() {
         <div key={team.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
           <span style={{ width: 20, height: 20, borderRadius: '50%', background: team.color, display: 'inline-block' }} />
           <span>{team.name}</span>
-          <button onClick={() => handleJoinTeam(team)}>Join</button>
+          <button onClick={() => handleJoinTeam(team)} style={{ padding: '4px 16px', background: '#3498db', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>Join</button>
         </div>
       ))}
 
@@ -164,7 +164,7 @@ export default function JoinPage() {
               />
             ))}
           </div>
-          <button onClick={handleCreateTeam} style={{ padding: '0.5rem 1rem', fontSize: '1rem' }}>
+          <button onClick={handleCreateTeam} style={{ padding: '0.75rem 1.5rem', fontSize: '1rem', background: '#2ecc71', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
             Create & Join
           </button>
         </>
