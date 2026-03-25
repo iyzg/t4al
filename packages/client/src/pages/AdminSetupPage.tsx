@@ -47,6 +47,7 @@ export default function AdminSetupPage() {
   const [popover, setPopover] = useState<ChallengeForm | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [gameStartTime, setGameStartTime] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   // Keep refs in sync for use in imperative map callbacks
   useEffect(() => { challengesRef.current = challenges; }, [challenges]);
@@ -263,7 +264,8 @@ export default function AdminSetupPage() {
   // --- Save / Cancel ---
 
   async function handleSave() {
-    if (!popover) return;
+    if (!popover || saving) return;
+    setSaving(true);
     const url = editingId
       ? `/api/challenges/${editingId}`
       : `/api/games/${gameId}/challenges`;
@@ -274,7 +276,7 @@ export default function AdminSetupPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(popover),
     });
-    if (!res.ok) { alert('Failed to save challenge'); return; }
+    if (!res.ok) { setSaving(false); alert('Failed to save challenge'); return; }
     const data = await res.json();
 
     if (editingId) {
@@ -285,6 +287,7 @@ export default function AdminSetupPage() {
       setChallenges((prev) => [...prev, { ...popover, id: data.id }]);
     }
 
+    setSaving(false);
     setPopover(null);
     setEditingId(null);
   }
@@ -359,8 +362,11 @@ export default function AdminSetupPage() {
             onChange={(e) => setPopover({ ...popover, spawnOffsetMinutes: Number(e.target.value) })} />
 
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={handleSave} style={{ flex: 1, padding: 8 }}>Save</button>
-            <button onClick={handleCancel} style={{ flex: 1, padding: 8 }}>Cancel</button>
+            <button onClick={handleSave} disabled={saving}
+              style={{ flex: 1, padding: 8, opacity: saving ? 0.5 : 1 }}>
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+            <button onClick={handleCancel} disabled={saving} style={{ flex: 1, padding: 8 }}>Cancel</button>
           </div>
           {editingId && (
             <button onClick={handleDelete}
