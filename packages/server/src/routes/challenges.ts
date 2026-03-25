@@ -120,6 +120,30 @@ router.post('/:id/claim', asyncHandler(async (req, res) => {
     );
 
     await client.query('COMMIT');
+
+    // Emit socket events so all connected clients update
+    const io = req.app.get('io');
+    if (io && challenge.game_id) {
+      io.to(challenge.game_id).emit('challenge:claimed', {
+        challengeId: challenge.id,
+        claimedByTeamId: teamId,
+        claimedByTeamName: '',
+        points: challenge.points,
+      });
+      // Send updated leaderboard
+      const allTeams = await pool.query(
+        'SELECT id, name, color, score FROM teams WHERE game_id = $1 ORDER BY score DESC',
+        [challenge.game_id],
+      );
+      const gameRow = await pool.query('SELECT leaderboard_mode FROM games WHERE id = $1', [challenge.game_id]);
+      io.to(challenge.game_id).emit('leaderboard:update', {
+        teams: allTeams.rows.map((t: any, i: number) => ({
+          id: t.id, name: t.name, color: t.color, score: t.score, rank: i + 1,
+        })),
+        mode: gameRow.rows[0]?.leaderboard_mode ?? 'full',
+      });
+    }
+
     res.json(challenge);
   } catch (err) {
     await client.query('ROLLBACK');
