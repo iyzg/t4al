@@ -181,6 +181,17 @@ export function registerSocketHandlers(io: Server) {
       try {
         await client.query('BEGIN');
 
+        // Verify the team has this challenge as their active challenge
+        const teamCheck = await client.query(
+          `SELECT active_challenge_id FROM teams WHERE id = $1`,
+          [data.teamId],
+        );
+        if (teamCheck.rows[0]?.active_challenge_id !== data.challengeId) {
+          await client.query('ROLLBACK');
+          socket.emit('complete:failed', { challengeId: data.challengeId, reason: 'not_active' as const });
+          return;
+        }
+
         const result = await client.query(
           `UPDATE challenges
            SET status='claimed', claimed_by_team_id=$2, claimed_at=NOW()
