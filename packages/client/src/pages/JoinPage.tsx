@@ -112,7 +112,7 @@ export default function JoinPage() {
           value={joinCode}
           onChange={(e) => setJoinCode(e.target.value)}
           placeholder="e.g. a1b2c3"
-          style={{ fontSize: '1.2rem', padding: '0.5rem', width: '100%', boxSizing: 'border-box' }}
+          style={{ fontSize: '1.2rem', padding: '0.5rem', width: '100%', boxSizing: 'border-box', background: '#2a2a3e', color: 'white', border: '1px solid #444', borderRadius: 4 }}
         />
         <button onClick={handleJoinCode} style={{ marginTop: '1rem', padding: '0.75rem 1.5rem', fontSize: '1rem', background: '#3498db', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
           Join Game
@@ -145,7 +145,7 @@ export default function JoinPage() {
             value={newTeamName}
             onChange={(e) => setNewTeamName(e.target.value)}
             placeholder="Team name"
-            style={{ fontSize: '1rem', padding: '0.5rem', width: '100%', boxSizing: 'border-box' }}
+            style={{ fontSize: '1rem', padding: '0.5rem', width: '100%', boxSizing: 'border-box', background: '#2a2a3e', color: 'white', border: '1px solid #444', borderRadius: 4 }}
           />
           <div style={{ display: 'flex', gap: '0.5rem', margin: '0.5rem 0', flexWrap: 'wrap' }}>
             {availableColors.map((c) => (

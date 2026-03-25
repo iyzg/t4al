@@ -62,7 +62,7 @@ export default function CreateGamePage() {
         value={name}
         onChange={(e) => setName(e.target.value)}
         placeholder="e.g. Friday Night Hunt"
-        style={{ fontSize: '1.1rem', padding: '0.5rem', width: '100%', marginBottom: 16, boxSizing: 'border-box' }}
+        style={{ fontSize: '1.1rem', padding: '0.5rem', width: '100%', marginBottom: 16, boxSizing: 'border-box', background: '#2a2a3e', color: 'white', border: '1px solid #444', borderRadius: 4 }}
       />
 
       <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>Duration (minutes)</label>
@@ -72,7 +72,7 @@ export default function CreateGamePage() {
         onChange={(e) => setDurationMinutes(Number(e.target.value))}
         min={10}
         max={480}
-        style={{ fontSize: '1.1rem', padding: '0.5rem', width: '100%', marginBottom: 16, boxSizing: 'border-box' }}
+        style={{ fontSize: '1.1rem', padding: '0.5rem', width: '100%', marginBottom: 16, boxSizing: 'border-box', background: '#2a2a3e', color: 'white', border: '1px solid #444', borderRadius: 4 }}
       />
 
       {error && <p style={{ color: '#e74c3c' }}>{error}</p>}
