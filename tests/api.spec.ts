@@ -144,6 +144,12 @@ test.describe('Teams CRUD', () => {
     const { status: s2 } = await api('POST', `/games/${game.id}/teams`, { color: '#fff' });
     expect(s2).toBe(400);
   });
+
+  test('rejects empty team name', async () => {
+    const { data: game } = await api('POST', '/games', { name: 'Empty Name Test' });
+    const { status } = await api('POST', `/games/${game.id}/teams`, { name: '', color: '#fff' });
+    expect(status).toBe(400);
+  });
 });
 
 test.describe('Challenges CRUD', () => {
@@ -174,6 +180,13 @@ test.describe('Challenges CRUD', () => {
 
   test('create challenge requires required fields', async () => {
     const { status } = await api('POST', `/games/${gameId}/challenges`, { name: 'Missing fields' });
+    expect(status).toBe(400);
+  });
+
+  test('rejects negative points', async () => {
+    const { status } = await api('POST', `/games/${gameId}/challenges`, {
+      name: 'Negative', description: 'D', points: -100, lat: 41.88, lng: -87.62,
+    });
     expect(status).toBe(400);
   });
 

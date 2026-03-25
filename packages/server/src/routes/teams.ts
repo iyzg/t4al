@@ -18,7 +18,7 @@ router.get('/', asyncHandler(async (req, res) => {
 router.post('/', asyncHandler(async (req, res) => {
   const { name, color } = req.body;
 
-  if (name == null || color == null) {
+  if (!name || !color) {
     res.status(400).json({ error: 'name and color are required' });
     return;
   }

@@ -13,6 +13,11 @@ router.post('/', asyncHandler(async (req, res) => {
     return;
   }
 
+  if (points < 0) {
+    res.status(400).json({ error: 'points must be non-negative' });
+    return;
+  }
+
   const result = await pool.query(
     `INSERT INTO challenges (game_id, name, description, points, lat, lng, proximity_meters, spawn_offset_minutes)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
