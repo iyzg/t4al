@@ -334,7 +334,7 @@ export default function AdminSetupPage() {
       )}
 
       {popover && (
-        <div style={{
+        <div className="setup-popover" style={{
           position: 'absolute', top: 16, right: 16, width: 300,
           background: '#1a1a2e', color: 'white', padding: 16, borderRadius: 8,
           display: 'flex', flexDirection: 'column', gap: 8,

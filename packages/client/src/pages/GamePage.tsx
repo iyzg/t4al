@@ -215,6 +215,7 @@ export default function GamePage() {
 
       {selectedChallenge && (
         <div
+          className="challenge-card"
           style={{
             position: 'absolute',
             bottom: 24,
