@@ -82,7 +82,7 @@ export default function JoinPage() {
           value={joinCode}
           onChange={(e) => setJoinCode(e.target.value)}
           placeholder="e.g. a1b2c3"
-          style={{ fontSize: '1.2rem', padding: '0.5rem', width: '100%' }}
+          style={{ fontSize: '1.2rem', padding: '0.5rem', width: '100%', boxSizing: 'border-box' }}
         />
         <button onClick={handleJoinCode} style={{ marginTop: '1rem', padding: '0.5rem 1rem', fontSize: '1rem' }}>
           Join Game
@@ -113,20 +113,21 @@ export default function JoinPage() {
         value={newTeamName}
         onChange={(e) => setNewTeamName(e.target.value)}
         placeholder="Team name"
-        style={{ fontSize: '1rem', padding: '0.5rem', width: '100%' }}
+        style={{ fontSize: '1rem', padding: '0.5rem', width: '100%', boxSizing: 'border-box' }}
       />
-      <div style={{ display: 'flex', gap: '0.5rem', margin: '0.5rem 0' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', margin: '0.5rem 0', flexWrap: 'wrap' }}>
         {TEAM_COLORS.map((c) => (
           <button
             key={c}
             onClick={() => setSelectedColor(c)}
             style={{
-              width: 32,
-              height: 32,
+              width: 40,
+              height: 40,
               borderRadius: '50%',
               background: c,
               border: c === selectedColor ? '3px solid white' : '3px solid transparent',
               cursor: 'pointer',
+              padding: 0,
             }}
           />
         ))}
