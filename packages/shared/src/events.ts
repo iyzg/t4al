@@ -89,6 +89,7 @@ export interface ActiveRestorePayload {
 export interface ServerToClientEvents {
   'active:restore': (data: ActiveRestorePayload) => void;
   'challenge:claimed': (data: ChallengeClaimedPayload) => void;
+  'game:started': (data: Record<string, never>) => void;
   'challenge:left': (data: ChallengeLeftPayload) => void;
   'challenge:spawned': (data: ChallengeSpawnedPayload) => void;
   'challenge:unlocked': (data: ChallengeUnlockedPayload) => void;

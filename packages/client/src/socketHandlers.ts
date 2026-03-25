@@ -45,6 +45,11 @@ export function registerSocketHandlers() {
 
   socket.on('complete:failed', (data) => {
     console.warn('Complete failed:', data?.reason);
+    // If activation or completion was rejected, revert the optimistic state
+    const { activeChallengeId } = store();
+    if (activeChallengeId === data?.challengeId) {
+      store().setActiveChallengeId(null);
+    }
   });
 
   socket.on('game:started', (_data: any) => {
