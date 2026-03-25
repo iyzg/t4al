@@ -40,6 +40,18 @@ interface GameRow {
   admin_code: string;
 }
 
+function formatEvent(type: string, payload: Record<string, unknown>): string {
+  const p = payload as any;
+  switch (type) {
+    case 'game:started': return 'Game started';
+    case 'game:ended': return `Game ended${p.reason ? ` (${p.reason})` : ''}`;
+    case 'team:joined': return `Team joined`;
+    case 'challenge:spawned': return `"${p.name}" spawned (${p.points} pts)`;
+    case 'challenge:claimed': return `"${p.challengeName}" claimed by ${p.teamName} (+${p.points} pts)`;
+    default: return `${type}: ${JSON.stringify(payload)}`;
+  }
+}
+
 export default function AdminLivePage() {
   const { gameId } = useParams<{ gameId: string }>();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -294,7 +306,7 @@ export default function AdminLivePage() {
           {events.map((e) => (
             <div key={e.id} style={{ marginBottom: 4 }}>
               <span style={{ opacity: 0.5 }}>{new Date(e.created_at).toLocaleTimeString()}</span>{' '}
-              {e.type}: {JSON.stringify(e.payload)}
+              {formatEvent(e.type, e.payload)}
             </div>
           ))}
         </div>

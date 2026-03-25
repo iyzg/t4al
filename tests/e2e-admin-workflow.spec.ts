@@ -63,9 +63,9 @@ test.describe('Admin Complete Workflow', () => {
     await page.waitForTimeout(12000);
     await expect(page.locator('text=[active]')).toBeVisible({ timeout: 5000 });
 
-    // 9. Verify event log has entries
-    await expect(page.locator('text=game:started')).toBeVisible();
-    await expect(page.locator('text=challenge:spawned')).toBeVisible();
+    // 9. Verify event log has entries (formatted human-readable)
+    await expect(page.locator('text=Game started')).toBeVisible();
+    await expect(page.locator('text=spawned')).toBeVisible();
   });
 
   test('end game workflow and verify end page', async ({ page }) => {
