@@ -190,6 +190,25 @@ test.describe('Challenges CRUD', () => {
     expect(status).toBe(400);
   });
 
+  test('rejects proximity out of range', async () => {
+    const { status: s1 } = await api('POST', `/games/${gameId}/challenges`, {
+      name: 'Too Close', description: 'D', points: 100, lat: 41.88, lng: -87.62, proximityMeters: 10,
+    });
+    expect(s1).toBe(400);
+
+    const { status: s2 } = await api('POST', `/games/${gameId}/challenges`, {
+      name: 'Too Far', description: 'D', points: 100, lat: 41.88, lng: -87.62, proximityMeters: 1000,
+    });
+    expect(s2).toBe(400);
+  });
+
+  test('rejects negative spawn offset', async () => {
+    const { status } = await api('POST', `/games/${gameId}/challenges`, {
+      name: 'Neg Offset', description: 'D', points: 100, lat: 41.88, lng: -87.62, spawnOffsetMinutes: -5,
+    });
+    expect(status).toBe(400);
+  });
+
   test('list challenges returns all', async () => {
     const { data } = await api('GET', `/games/${gameId}/challenges`);
     expect(data.length).toBeGreaterThanOrEqual(1);

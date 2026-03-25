@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import pool from '../db/pool.js';
 import { asyncHandler } from '../asyncHandler.js';
+import { MIN_PROXIMITY_METERS, MAX_PROXIMITY_METERS } from '@t4al/shared';
 
 const router = Router({ mergeParams: true });
 
@@ -15,6 +16,16 @@ router.post('/', asyncHandler(async (req, res) => {
 
   if (points < 0) {
     res.status(400).json({ error: 'points must be non-negative' });
+    return;
+  }
+
+  if (proximityMeters < MIN_PROXIMITY_METERS || proximityMeters > MAX_PROXIMITY_METERS) {
+    res.status(400).json({ error: `proximityMeters must be between ${MIN_PROXIMITY_METERS} and ${MAX_PROXIMITY_METERS}` });
+    return;
+  }
+
+  if (spawnOffsetMinutes < 0) {
+    res.status(400).json({ error: 'spawnOffsetMinutes must be non-negative' });
     return;
   }
 
