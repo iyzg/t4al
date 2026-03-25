@@ -35,6 +35,11 @@ async function spawnChallenges(io: Server) {
   for (const row of result.rows) {
     const challenge = mapChallenge(row);
     io.to(row.game_id).emit('challenge:spawned', { challenge });
+    // Log event for admin panel
+    pool.query(
+      `INSERT INTO game_events (game_id, type, payload) VALUES ($1, 'challenge:spawned', $2)`,
+      [row.game_id, JSON.stringify({ challengeId: row.id, name: row.name, points: row.points })],
+    ).catch((err: any) => console.error('Failed to log spawn event:', err));
     console.log(`challenge spawned: ${row.name} in game ${row.game_id}`);
   }
 }

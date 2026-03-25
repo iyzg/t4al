@@ -100,6 +100,11 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
     return;
   }
 
+  await pool.query(
+    `INSERT INTO game_events (game_id, type, payload) VALUES ($1, 'game:started', '{}')`,
+    [req.params.id],
+  );
+
   res.json(result.rows[0]);
 }));
 
@@ -114,6 +119,11 @@ router.post('/:id/end', asyncHandler(async (req, res) => {
     res.status(400).json({ error: 'game not found or not active' });
     return;
   }
+
+  await pool.query(
+    `INSERT INTO game_events (game_id, type, payload) VALUES ($1, 'game:ended', '{"reason":"admin"}')`,
+    [req.params.id],
+  );
 
   res.json(result.rows[0]);
 }));

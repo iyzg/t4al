@@ -77,7 +77,8 @@ test.describe('Admin Live Panel', () => {
     // End button should now work (need to handle confirm dialog)
     page.on('dialog', (dialog) => dialog.accept());
     await page.click('button:has-text("End Game")');
-    await expect(page.locator('text=ENDED')).toBeVisible({ timeout: 10000 });
+    // Use exact match on the status badge, not the event log
+    await expect(page.getByText('ENDED', { exact: true }).first()).toBeVisible({ timeout: 10000 });
   });
 
   test('game name edit and save', async ({ page }) => {

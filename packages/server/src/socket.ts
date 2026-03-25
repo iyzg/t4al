@@ -20,6 +20,18 @@ export function mapChallenge(row: any) {
   };
 }
 
+/** Log a game event for the admin event log */
+async function logEvent(gameId: string, type: string, payload: Record<string, unknown> = {}) {
+  try {
+    await pool.query(
+      `INSERT INTO game_events (game_id, type, payload) VALUES ($1, $2, $3)`,
+      [gameId, type, JSON.stringify(payload)],
+    );
+  } catch (err) {
+    console.error('Failed to log event:', err);
+  }
+}
+
 // In-memory store for current team positions (used for proximity checks)
 const currentPositions = new Map<string, { lat: number; lng: number; updatedAt: Date }>();
 
@@ -55,6 +67,7 @@ export function registerSocketHandlers(io: Server) {
       socket.data.gameId = data.gameId;
       socket.data.teamId = data.teamId;
       console.log(`team ${data.teamId} joined game ${data.gameId}`);
+      logEvent(data.gameId, 'team:joined', { teamId: data.teamId });
 
       // Send current challenges (active + claimed) so late joiners see existing state
       try {
@@ -196,6 +209,14 @@ export function registerSocketHandlers(io: Server) {
         socket.emit('complete:success', { challengeId: challenge.id, points: challenge.points });
 
         if (socket.data.gameId) {
+          logEvent(socket.data.gameId, 'challenge:claimed', {
+            challengeId: challenge.id,
+            challengeName: challenge.name,
+            teamId: data.teamId,
+            teamName: teamName,
+            points: challenge.points,
+          });
+
           io.to(socket.data.gameId).emit('challenge:claimed', {
             challengeId: challenge.id,
             claimedByTeamId: data.teamId,
