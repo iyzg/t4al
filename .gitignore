@@ -3,3 +3,5 @@ dist/
 *.pmtiles
 .env
 anki/
+test-results/
+playwright-report/

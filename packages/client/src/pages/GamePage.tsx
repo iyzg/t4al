@@ -172,8 +172,6 @@ export default function GamePage() {
       applyMarkerStyle(el, c, activeChallengeId, teamId);
       el.addEventListener('click', (e) => {
         e.stopPropagation();
-        // Read latest from store to avoid stale closure
-        const fresh = useGameStore.getState().challenges[c.id];
         setSelectedChallengeId(c.id);
       });
       const marker = new maplibregl.Marker({ element: el }).setLngLat([c.lng, c.lat]).addTo(map);
