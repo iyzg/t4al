@@ -61,23 +61,28 @@ export default function AdminLivePage() {
   const initializedRef = useRef(false);
   useEffect(() => {
     const fetchData = async () => {
-      const [gRes, cRes, tRes, eRes] = await Promise.all([
-        fetch(`/api/games/${gameId}`),
-        fetch(`/api/games/${gameId}/challenges`),
-        fetch(`/api/games/${gameId}/teams`),
-        fetch(`/api/games/${gameId}/events`).catch(() => null),
-      ]);
-      const gameData = await gRes.json();
-      setGame(gameData);
-      setChallenges(await cRes.json());
-      setTeams(await tRes.json());
-      if (eRes?.ok) setEvents(await eRes.json());
+      try {
+        const [gRes, cRes, tRes, eRes] = await Promise.all([
+          fetch(`/api/games/${gameId}`),
+          fetch(`/api/games/${gameId}/challenges`),
+          fetch(`/api/games/${gameId}/teams`),
+          fetch(`/api/games/${gameId}/events`).catch(() => null),
+        ]);
+        if (!gRes.ok || !cRes.ok || !tRes.ok) return; // silently skip on error
+        const gameData = await gRes.json();
+        setGame(gameData);
+        setChallenges(await cRes.json());
+        setTeams(await tRes.json());
+        if (eRes?.ok) setEvents(await eRes.json());
 
-      // Seed edit fields on first load
-      if (!initializedRef.current) {
-        initializedRef.current = true;
-        setEditName(gameData.name);
-        setEditDuration(gameData.duration_minutes);
+        // Seed edit fields on first load
+        if (!initializedRef.current) {
+          initializedRef.current = true;
+          setEditName(gameData.name);
+          setEditDuration(gameData.duration_minutes);
+        }
+      } catch {
+        // Network error or JSON parse failure — skip this poll cycle
       }
     };
     fetchData();

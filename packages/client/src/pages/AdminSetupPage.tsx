@@ -56,12 +56,14 @@ export default function AdminSetupPage() {
   // Load game info + existing challenges on mount
   useEffect(() => {
     fetch(`/api/games/${gameId}`)
-      .then((r) => r.json())
-      .then((g) => setGameStartTime(g.start_time ?? null));
+      .then((r) => r.ok ? r.json() : null)
+      .then((g) => { if (g) setGameStartTime(g.start_time ?? null); })
+      .catch(() => {});
 
     fetch(`/api/games/${gameId}/challenges`)
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : [])
       .then((rows) => {
+        if (!Array.isArray(rows)) return;
         setChallenges(rows.map((r: any) => ({
           id: r.id,
           lat: Number(r.lat),
@@ -72,7 +74,8 @@ export default function AdminSetupPage() {
           proximityMeters: r.proximity_meters,
           spawnOffsetMinutes: r.spawn_offset_minutes,
         })));
-      });
+      })
+      .catch(() => {});
   }, [gameId]);
 
   // --- Map helpers (stable via useCallback + refs) ---
