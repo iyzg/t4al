@@ -29,6 +29,7 @@ export default function EndPage() {
       <h1>{gameName || 'Game Over'}</h1>
       <h2>Final Standings</h2>
 
+      {teams.length === 0 && <p style={{ opacity: 0.5 }}>No teams played</p>}
       {teams.map((team, i) => (
         <div
           key={team.id}
@@ -51,6 +52,15 @@ export default function EndPage() {
           <span style={{ fontSize: 20, fontWeight: 'bold' }}>{team.score} pts</span>
         </div>
       ))}
+
+      <div style={{ marginTop: 32, display: 'flex', gap: 12, justifyContent: 'center' }}>
+        <a href="/" style={{ padding: '10px 20px', background: '#3498db', color: 'white', borderRadius: 6, textDecoration: 'none' }}>
+          New Game
+        </a>
+        <a href="/join" style={{ padding: '10px 20px', background: '#2ecc71', color: 'white', borderRadius: 6, textDecoration: 'none' }}>
+          Join Another Game
+        </a>
+      </div>
     </div>
   );
 }
