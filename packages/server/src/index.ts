@@ -55,6 +55,7 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 });
 
 const io = new Server(httpServer, { cors: { origin: '*' } });
+app.set('io', io);  // Make io accessible to routes via req.app.get('io')
 registerSocketHandlers(io);
 startTicker(io);
 

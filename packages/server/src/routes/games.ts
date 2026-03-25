@@ -105,6 +105,10 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
     [req.params.id],
   );
 
+  // Notify clients the game has started
+  const io = req.app.get('io');
+  if (io) io.to(req.params.id).emit('game:started', {});
+
   res.json(result.rows[0]);
 }));
 
@@ -124,6 +128,10 @@ router.post('/:id/end', asyncHandler(async (req, res) => {
     `INSERT INTO game_events (game_id, type, payload) VALUES ($1, 'game:ended', '{"reason":"admin"}')`,
     [req.params.id],
   );
+
+  // Notify all connected clients that the game has ended
+  const io = req.app.get('io');
+  if (io) io.to(req.params.id).emit('game:ended', {});
 
   res.json(result.rows[0]);
 }));
