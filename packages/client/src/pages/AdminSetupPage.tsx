@@ -286,6 +286,15 @@ export default function AdminSetupPage() {
     setEditingId(null);
   }
 
+  async function handleDelete() {
+    if (!editingId) return;
+    const res = await fetch(`/api/challenges/${editingId}`, { method: 'DELETE' });
+    if (!res.ok) { alert('Failed to delete challenge'); return; }
+    setChallenges((prev) => prev.filter((c) => c.id !== editingId));
+    setPopover(null);
+    setEditingId(null);
+  }
+
   function handleCancel() {
     if (editingId) revertMarker(editingId);
     setPopover(null);
@@ -350,6 +359,12 @@ export default function AdminSetupPage() {
             <button onClick={handleSave} style={{ flex: 1, padding: 8 }}>Save</button>
             <button onClick={handleCancel} style={{ flex: 1, padding: 8 }}>Cancel</button>
           </div>
+          {editingId && (
+            <button onClick={handleDelete}
+              style={{ padding: 8, background: '#e74c3c', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', marginTop: 4 }}>
+              Delete Challenge
+            </button>
+          )}
         </div>
       )}
     </div>
