@@ -52,6 +52,11 @@ export default function JoinPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: newTeamName, color: selectedColor }),
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      setError(err?.error || 'Failed to create team');
+      return;
+    }
     const data = await res.json();
     handleJoinTeam(data);
   }
@@ -129,6 +134,7 @@ export default function JoinPage() {
       <button onClick={handleCreateTeam} style={{ padding: '0.5rem 1rem', fontSize: '1rem' }}>
         Create & Join
       </button>
+      {error && <p style={{ color: 'red' }}>{error}</p>}
     </div>
   );
 }
