@@ -46,6 +46,11 @@ export default function GamePage() {
   // Derive selectedChallenge from store so it's always fresh
   const selectedChallenge = selectedChallengeId ? challenges[selectedChallengeId] ?? null : null;
 
+  // Register handlers first so no events are missed during connect
+  useEffect(() => {
+    registerSocketHandlers();
+  }, []);
+
   // Restore identity from sessionStorage on refresh, or redirect to join
   useEffect(() => {
     if (gameId && teamId) return; // already have identity
@@ -57,17 +62,13 @@ export default function GamePage() {
     try {
       const { gameId: gid, teamId: tid, teamColor: tc } = JSON.parse(saved);
       useGameStore.getState().setIdentity(gid, tid, tc);
+      registerSocketHandlers(); // ensure handlers ready before join
       socket.connect();
       socket.emit('game:join', { gameId: gid, teamId: tid });
     } catch {
       navigate('/join');
     }
   }, [gameId, teamId, navigate]);
-
-  // Register socket handlers once (idempotent)
-  useEffect(() => {
-    registerSocketHandlers();
-  }, []);
 
   // Redirect to end page when game ends
   useEffect(() => {

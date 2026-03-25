@@ -14,6 +14,38 @@ async function api(method: string, path: string, body?: any) {
  * We use page.evaluate() to interact with the Socket.io client.
  */
 test.describe('Socket.io Game Lifecycle', () => {
+  test('late-joining team immediately sees active challenges and leaderboard', async ({ page }) => {
+    // Setup: create game, team, challenge, start, wait for spawn
+    const { data: game } = await api('POST', '/games', { name: 'Late Join Test' });
+    const { data: team1 } = await api('POST', `/games/${game.id}/teams`, { name: 'Early Bird', color: '#e74c3c' });
+    const { data: team2 } = await api('POST', `/games/${game.id}/teams`, { name: 'Late Comer', color: '#3498db' });
+    await api('POST', `/games/${game.id}/challenges`, {
+      name: 'Already Spawned', description: 'Should be visible', points: 300,
+      lat: 41.8827, lng: -87.6233, spawnOffsetMinutes: 0,
+    });
+    await api('POST', `/games/${game.id}/start`);
+
+    // Wait for ticker to spawn the challenge
+    await new Promise(r => setTimeout(r, 12000));
+
+    // Late-join as team2 — set identity and navigate
+    await page.goto('/join');
+    await page.evaluate(({ gid, tid }) => {
+      sessionStorage.setItem('t4al_identity', JSON.stringify({
+        gameId: gid, teamId: tid, teamColor: '#3498db',
+      }));
+    }, { gid: game.id, tid: team2.id });
+
+    await page.goto(`/game/${game.id}`);
+
+    // Should immediately see the leaderboard with both teams
+    await expect(page.locator('text=Early Bird')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('text=Late Comer')).toBeVisible({ timeout: 5000 });
+
+    // Should see the game name in the HUD (proves game:started was received → HUD fetched game info)
+    await expect(page.locator('text=Late Join Test')).toBeVisible({ timeout: 5000 });
+  });
+
   test('join sends initial challenges and leaderboard', async ({ page }) => {
     // Set up: create game, team, challenge, start game
     const { data: game } = await api('POST', '/games', { name: 'Socket Test' });

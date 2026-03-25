@@ -106,8 +106,22 @@ export function registerSocketHandlers(io: Server) {
           socket.emit('active:restore', { challengeId: myTeam.rows[0].active_challenge_id });
         }
 
-        // If game already ended, tell the client immediately
-        if (gameRow?.status === 'ended') {
+        // Tell the client the current game status + mode
+        if (gameRow?.status === 'active') {
+          socket.emit('game:started', {});
+
+          // Send current mode segment (if any)
+          const segResult = await pool.query(
+            `SELECT mode FROM game_mode_segments
+             WHERE game_id = $1
+               AND NOW() >= (SELECT start_time FROM games WHERE id = $1) + (start_offset_minutes || ' minutes')::interval
+               AND NOW() < (SELECT start_time FROM games WHERE id = $1) + (end_offset_minutes || ' minutes')::interval`,
+            [data.gameId],
+          );
+          if (segResult.rows.length > 0) {
+            socket.emit('mode:change', { mode: 'hidden', segmentMode: segResult.rows[0].mode });
+          }
+        } else if (gameRow?.status === 'ended') {
           socket.emit('game:ended', {});
         }
       } catch (err) {

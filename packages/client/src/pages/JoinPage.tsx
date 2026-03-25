@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../store';
 import { socket } from '../socket';
+import { registerSocketHandlers } from '../socketHandlers';
 
 interface TeamRow {
   id: string;
@@ -94,6 +95,8 @@ export default function JoinPage() {
       gameId: game!.id, teamId: team.id, teamColor: team.color,
     }));
 
+    // Register handlers BEFORE connect/emit so no initial state events are lost
+    registerSocketHandlers();
     socket.connect();
     socket.emit('game:join', { gameId: game!.id, teamId: team.id });
     navigate(`/game/${game!.id}`);
