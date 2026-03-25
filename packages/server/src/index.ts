@@ -40,6 +40,11 @@ app.get('/api/games/:gameId/events', asyncHandler(async (req, res) => {
 // Error-handling middleware — must be after all routes
 // Express identifies this as an error handler by the 4-arg signature
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  // JSON body parse error (malformed JSON)
+  if (err.type === 'entity.parse.failed') {
+    res.status(400).json({ error: 'invalid JSON' });
+    return;
+  }
   // Postgres: invalid UUID format
   if (err.code === '22P02') {
     res.status(400).json({ error: 'invalid id format' });

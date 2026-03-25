@@ -21,6 +21,19 @@ test.describe('Health', () => {
   });
 });
 
+test.describe('Error Handling', () => {
+  test('malformed JSON returns 400', async () => {
+    const res = await fetch(`${API}/games`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{invalid json',
+    });
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toBe('invalid JSON');
+  });
+});
+
 test.describe('Games CRUD', () => {
   test('POST /api/games creates a game', async () => {
     const { status, data } = await api('POST', '/games', { name: 'Test Game', durationMinutes: 30 });
