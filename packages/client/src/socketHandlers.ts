@@ -66,6 +66,11 @@ export function registerSocketHandlers() {
 
   socket.on('game:started', () => {
     store().setGameStatus('active');
+    // Re-join to get fresh game:state snapshot with updated game times
+    const { gameId, teamId } = store();
+    if (gameId && teamId) {
+      socket.emit('game:join', { gameId, teamId });
+    }
   });
 
   socket.on('game:ended', (_data) => {
