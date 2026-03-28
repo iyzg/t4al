@@ -13,11 +13,11 @@ interface ChallengeForm {
   description: string;
   points: number;
   proximityMeters: number;
-  spawnOffsetMinutes: number;
 }
 
 interface SavedChallenge extends ChallengeForm {
   id: string;
+  sortOrder: number;
 }
 
 /** Build a GeoJSON polygon approximating a circle on the map */
@@ -46,21 +46,16 @@ export default function AdminSetupPage() {
   const [challenges, setChallenges] = useState<SavedChallenge[]>([]);
   const [popover, setPopover] = useState<ChallengeForm | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [gameStartTime, setGameStartTime] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showOrderPanel, setShowOrderPanel] = useState(false);
 
   // Keep refs in sync for use in imperative map callbacks
   useEffect(() => { challengesRef.current = challenges; }, [challenges]);
   useEffect(() => { editingIdRef.current = editingId; }, [editingId]);
   useEffect(() => { popoverRef.current = popover; }, [popover]);
 
-  // Load game info + existing challenges on mount
+  // Load existing challenges on mount
   useEffect(() => {
-    fetch(`/api/games/${gameId}`)
-      .then((r) => r.ok ? r.json() : null)
-      .then((g) => { if (g) setGameStartTime(g.start_time ?? null); })
-      .catch(() => {});
-
     fetch(`/api/games/${gameId}/challenges`)
       .then((r) => r.ok ? r.json() : [])
       .then((rows) => {
@@ -73,13 +68,13 @@ export default function AdminSetupPage() {
           description: r.description,
           points: r.points,
           proximityMeters: r.proximity_meters,
-          spawnOffsetMinutes: r.spawn_offset_minutes,
+          sortOrder: r.sort_order,
         })));
       })
       .catch(() => {});
   }, [gameId]);
 
-  // --- Map helpers (stable via useCallback + refs) ---
+  // --- Map helpers ---
 
   const updateRadiusCircle = useCallback((lat: number, lng: number, radiusMeters: number) => {
     const src = mapRef.current?.getSource('radius-circle') as maplibregl.GeoJSONSource | undefined;
@@ -111,14 +106,13 @@ export default function AdminSetupPage() {
     previewMarkerRef.current = null;
   }, []);
 
-  /** Revert a previously-dragged marker to its saved position */
   const revertMarker = useCallback((id: string) => {
     const orig = challengesRef.current.find((c) => c.id === id);
     const marker = markersRef.current.get(id);
     if (orig && marker) marker.setLngLat([orig.lng, orig.lat]);
   }, []);
 
-  // --- Sync radius circle + preview marker with popover state ---
+  // Sync radius circle + preview marker with popover state
   useEffect(() => {
     if (popover) {
       updateRadiusCircle(popover.lat, popover.lng, popover.proximityMeters);
@@ -134,7 +128,7 @@ export default function AdminSetupPage() {
   }, [popover?.lat, popover?.lng, popover?.proximityMeters, editingId,
       updateRadiusCircle, clearRadiusCircle, showPreviewMarker, hidePreviewMarker]);
 
-  // --- Initialize map ---
+  // Initialize map
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
@@ -166,7 +160,6 @@ export default function AdminSetupPage() {
       });
 
       map.on('click', (e) => {
-        // Revert any unsaved drag on previous selection
         const prevId = editingIdRef.current;
         if (prevId) revertMarker(prevId);
 
@@ -178,7 +171,6 @@ export default function AdminSetupPage() {
           description: '',
           points: 100,
           proximityMeters: 100,
-          spawnOffsetMinutes: 0,
         });
       });
 
@@ -189,12 +181,11 @@ export default function AdminSetupPage() {
     }
   }, []);
 
-  // --- Sync markers with challenges array ---
+  // Sync markers with challenges array
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    // Remove stale markers
     markersRef.current.forEach((marker, id) => {
       if (!challenges.find((c) => c.id === id)) {
         marker.remove();
@@ -202,7 +193,6 @@ export default function AdminSetupPage() {
       }
     });
 
-    // Add new / update existing
     challenges.forEach((c) => {
       const existing = markersRef.current.get(c.id);
       if (existing) {
@@ -219,25 +209,22 @@ export default function AdminSetupPage() {
 
       el.addEventListener('click', (ev) => {
         ev.stopPropagation();
-        // Revert any unsaved drag on previous selection
         const prevId = editingIdRef.current;
         if (prevId && prevId !== c.id) revertMarker(prevId);
 
         const fresh = challengesRef.current.find((ch) => ch.id === c.id);
         if (!fresh) return;
-        const { id: _, ...form } = fresh;
+        const { id: _, sortOrder: __, ...form } = fresh;
         setEditingId(c.id);
         setPopover(form);
       });
 
-      // Update radius circle continuously while dragging
       marker.on('drag', () => {
         const { lat, lng } = marker.getLngLat();
         const radius = popoverRef.current?.proximityMeters ?? 100;
         updateRadiusCircle(lat, lng, radius);
       });
 
-      // Commit the new position to popover state when drag finishes
       marker.on('dragend', () => {
         const { lat, lng } = marker.getLngLat();
         setPopover((prev) => prev ? { ...prev, lat, lng } : null);
@@ -247,9 +234,7 @@ export default function AdminSetupPage() {
     });
   }, [challenges, revertMarker]);
 
-  // --- Toggle draggable + visual highlight on selected marker ---
-  // IMPORTANT: only set individual style props — never cssText — because
-  // MapLibre positions markers via an inline `transform` on the same element.
+  // Toggle draggable + visual highlight on selected marker
   useEffect(() => {
     markersRef.current.forEach((marker, id) => {
       const selected = id === editingId;
@@ -261,7 +246,7 @@ export default function AdminSetupPage() {
     });
   }, [editingId, challenges]);
 
-  // --- Save / Cancel ---
+  // --- Save / Cancel / Delete ---
 
   async function handleSave() {
     if (!popover || saving) return;
@@ -281,10 +266,10 @@ export default function AdminSetupPage() {
 
     if (editingId) {
       setChallenges((prev) =>
-        prev.map((c) => (c.id === editingId ? { ...popover, id: editingId } : c)),
+        prev.map((c) => (c.id === editingId ? { ...popover, id: editingId, sortOrder: c.sortOrder } : c)),
       );
     } else {
-      setChallenges((prev) => [...prev, { ...popover, id: data.id }]);
+      setChallenges((prev) => [...prev, { ...popover, id: data.id, sortOrder: data.sort_order }]);
     }
 
     setSaving(false);
@@ -307,13 +292,26 @@ export default function AdminSetupPage() {
     setEditingId(null);
   }
 
-  // --- Spawn time label ---
-  function spawnTimeLabel(offsetMinutes: number): string {
-    if (gameStartTime) {
-      const t = new Date(new Date(gameStartTime).getTime() + offsetMinutes * 60_000);
-      return `+${offsetMinutes} min (${t.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })})`;
-    }
-    return `+${offsetMinutes} min after start`;
+  // --- Reorder ---
+
+  async function moveChallenge(index: number, direction: -1 | 1) {
+    const newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= challenges.length) return;
+
+    const newChallenges = [...challenges];
+    const [item] = newChallenges.splice(index, 1);
+    newChallenges.splice(newIndex, 0, item);
+
+    // Update sortOrder based on position
+    const reordered = newChallenges.map((c, i) => ({ ...c, sortOrder: i + 1 }));
+    setChallenges(reordered);
+
+    // Save to server
+    await fetch(`/api/games/${gameId}/challenges/reorder`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order: reordered.map((c) => ({ id: c.id, sortOrder: c.sortOrder })) }),
+    });
   }
 
   // --- Render ---
@@ -321,21 +319,28 @@ export default function AdminSetupPage() {
     <div style={{ position: 'relative', width: '100%', height: '100vh' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
 
-      {!popover && (
+      {/* Top bar */}
+      {!popover && !showOrderPanel && (
         <div style={{
           position: 'absolute', top: 16, left: 16,
           background: 'rgba(0,0,0,0.7)', color: 'white',
           padding: '8px 16px', borderRadius: 8,
           display: 'flex', alignItems: 'center', gap: 16,
         }}>
-          <span>Click anywhere on the map to create a challenge</span>
+          <span>Click map to create challenge</span>
+          <button
+            onClick={() => setShowOrderPanel(true)}
+            style={{ padding: '4px 12px', background: '#3498db', border: 'none', borderRadius: 4, color: 'white', cursor: 'pointer' }}>
+            Challenge Order ({challenges.length})
+          </button>
           <a href={`/game/${gameId}/admin`}
             style={{ color: '#3498db', textDecoration: 'none', whiteSpace: 'nowrap' }}>
-            Back to Admin Panel
+            Back to Admin
           </a>
         </div>
       )}
 
+      {/* Challenge creation/edit popover */}
       {popover && (
         <div className="setup-popover" style={{
           position: 'absolute', top: 16, right: 16, width: 300,
@@ -357,10 +362,6 @@ export default function AdminSetupPage() {
           <input type="range" min={50} max={300} value={popover.proximityMeters}
             onChange={(e) => setPopover({ ...popover, proximityMeters: Number(e.target.value) })} />
 
-          <label>Spawn Offset: {spawnTimeLabel(popover.spawnOffsetMinutes)}</label>
-          <input type="number" min={0} value={popover.spawnOffsetMinutes}
-            onChange={(e) => setPopover({ ...popover, spawnOffsetMinutes: Number(e.target.value) })} />
-
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={handleSave} disabled={saving}
               style={{ flex: 1, padding: 8, opacity: saving ? 0.5 : 1 }}>
@@ -374,6 +375,51 @@ export default function AdminSetupPage() {
               Delete Challenge
             </button>
           )}
+        </div>
+      )}
+
+      {/* Challenge order panel */}
+      {showOrderPanel && (
+        <div style={{
+          position: 'absolute', top: 16, right: 16, width: 320,
+          background: '#1a1a2e', color: 'white', padding: 16, borderRadius: 8,
+          maxHeight: 'calc(100vh - 32px)', overflow: 'auto',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h3 style={{ margin: 0 }}>Challenge Order</h3>
+            <button onClick={() => setShowOrderPanel(false)}
+              style={{ background: 'none', border: 'none', color: 'white', fontSize: 18, cursor: 'pointer' }}>
+              x
+            </button>
+          </div>
+          <p style={{ fontSize: 12, opacity: 0.6, margin: '0 0 12px' }}>
+            Challenges at the top appear first when the game starts.
+          </p>
+          {challenges
+            .sort((a, b) => a.sortOrder - b.sortOrder)
+            .map((c, i) => (
+            <div key={c.id} style={{
+              display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6,
+              padding: '6px 8px', background: '#2a2a3e', borderRadius: 4,
+            }}>
+              <span style={{ opacity: 0.5, width: 20, fontSize: 12 }}>#{i + 1}</span>
+              <span style={{ flex: 1, fontSize: 14 }}>{c.name}</span>
+              <span style={{ opacity: 0.5, fontSize: 12 }}>{c.points}pts</span>
+              <button
+                onClick={() => moveChallenge(i, -1)}
+                disabled={i === 0}
+                style={{ background: 'none', border: 'none', color: i === 0 ? '#555' : 'white', cursor: i === 0 ? 'default' : 'pointer', fontSize: 16, padding: '2px 6px' }}>
+                ^
+              </button>
+              <button
+                onClick={() => moveChallenge(i, 1)}
+                disabled={i === challenges.length - 1}
+                style={{ background: 'none', border: 'none', color: i === challenges.length - 1 ? '#555' : 'white', cursor: i === challenges.length - 1 ? 'default' : 'pointer', fontSize: 16, padding: '2px 6px' }}>
+                v
+              </button>
+            </div>
+          ))}
+          {challenges.length === 0 && <p style={{ opacity: 0.5, fontSize: 13 }}>No challenges created yet</p>}
         </div>
       )}
     </div>

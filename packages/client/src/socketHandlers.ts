@@ -11,6 +11,12 @@ export function registerSocketHandlers() {
 
   const store = useGameStore.getState;
 
+  // Full state snapshot on join/reconnect
+  socket.on('game:state', (data) => {
+    if (!data?.game || !data?.teams || !data?.challenges) return;
+    store().setGameState(data.game, data.teams, data.challenges);
+  });
+
   socket.on('challenge:spawned', (data) => {
     if (!data?.challenge) return;
     store().challengeSpawned(data.challenge);
@@ -21,22 +27,29 @@ export function registerSocketHandlers() {
     store().challengeClaimed(data.challengeId, data.claimedByTeamId);
   });
 
+  socket.on('challenge:expired', (data) => {
+    if (!data?.challengeId) return;
+    store().challengeExpired(data.challengeId);
+  });
+
+  socket.on('challenge:activated', (data) => {
+    if (!data?.challengeId || !data?.teamId) return;
+    store().challengeActivatedByTeam(data.challengeId, data.teamId);
+  });
+
+  socket.on('challenge:abandoned', (data) => {
+    if (!data?.challengeId || !data?.teamId) return;
+    store().challengeAbandonedByTeam(data.challengeId, data.teamId);
+  });
+
+  socket.on('challenge:yanked', (data) => {
+    if (!data?.challengeId) return;
+    store().challengeYanked(data.challengeId);
+  });
+
   socket.on('leaderboard:update', (data) => {
     if (!data?.teams) return;
-    store().leaderboardUpdated(data.teams, data.mode);
-  });
-
-  socket.on('mode:change', (data) => {
-    if (!data) return;
-    store().modeChanged(data.mode, data.segmentMode);
-  });
-
-  socket.on('challenge:unlocked', (_data) => {
-    // Server says we're in range — future: show notification
-  });
-
-  socket.on('challenge:left', (_data) => {
-    store().setActiveChallengeId(null);
+    store().leaderboardUpdated(data.teams);
   });
 
   socket.on('complete:success', (_data) => {
@@ -45,7 +58,6 @@ export function registerSocketHandlers() {
 
   socket.on('complete:failed', (data) => {
     console.warn('Complete failed:', data?.reason);
-    // If activation or completion was rejected, revert the optimistic state
     const { activeChallengeId } = store();
     if (activeChallengeId === data?.challengeId) {
       store().setActiveChallengeId(null);
@@ -60,14 +72,7 @@ export function registerSocketHandlers() {
     store().setGameStatus('ended');
   });
 
-  // Restore active challenge on (re)join
-  socket.on('active:restore', (data) => {
-    if (data?.challengeId) {
-      store().setActiveChallengeId(data.challengeId);
-    }
-  });
-
-  // Auto-rejoin game room after socket reconnects (network blip, server restart)
+  // Auto-rejoin game room after socket reconnects
   socket.on('connect', () => {
     const { gameId, teamId } = store();
     if (gameId && teamId) {

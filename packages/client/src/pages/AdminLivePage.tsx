@@ -20,6 +20,7 @@ interface ChallengeRow {
   points: number;
   lat: number;
   lng: number;
+  sort_order: number;
   claimed_by_team_id: string | null;
 }
 
@@ -28,6 +29,7 @@ interface TeamRow {
   name: string;
   color: string;
   score: number;
+  active_challenge_id: string | null;
 }
 
 interface GameRow {
@@ -35,6 +37,8 @@ interface GameRow {
   name: string;
   status: string;
   duration_minutes: number;
+  active_challenge_count: number;
+  challenge_expire_minutes: number;
   end_time: string | null;
   join_code: string;
   admin_code: string;
@@ -47,7 +51,10 @@ function formatEvent(type: string, payload: Record<string, unknown>): string {
     case 'game:ended': return `Game ended${p.reason ? ` (${p.reason})` : ''}`;
     case 'team:joined': return `Team joined`;
     case 'challenge:spawned': return `"${p.name}" spawned (${p.points} pts)`;
+    case 'challenge:expired': return `"${p.name}" expired`;
     case 'challenge:claimed': return `"${p.challengeName}" claimed by ${p.teamName} (+${p.points} pts)`;
+    case 'challenge:activated': return `Team activated a challenge`;
+    case 'challenge:abandoned': return `Team abandoned a challenge`;
     default: return `${type}: ${JSON.stringify(payload)}`;
   }
 }
@@ -67,6 +74,8 @@ export default function AdminLivePage() {
   // Editable game settings
   const [editName, setEditName] = useState('');
   const [editDuration, setEditDuration] = useState(60);
+  const [editActiveChallengeCount, setEditActiveChallengeCount] = useState(3);
+  const [editChallengeExpireMinutes, setEditChallengeExpireMinutes] = useState(10);
   const [settingsDirty, setSettingsDirty] = useState(false);
 
   // Poll for updates every 5s
@@ -80,21 +89,22 @@ export default function AdminLivePage() {
           fetch(`/api/games/${gameId}/teams`),
           fetch(`/api/games/${gameId}/events`).catch(() => null),
         ]);
-        if (!gRes.ok || !cRes.ok || !tRes.ok) return; // silently skip on error
+        if (!gRes.ok || !cRes.ok || !tRes.ok) return;
         const gameData = await gRes.json();
         setGame(gameData);
         setChallenges(await cRes.json());
         setTeams(await tRes.json());
         if (eRes?.ok) setEvents(await eRes.json());
 
-        // Seed edit fields on first load
         if (!initializedRef.current) {
           initializedRef.current = true;
           setEditName(gameData.name);
           setEditDuration(gameData.duration_minutes);
+          setEditActiveChallengeCount(gameData.active_challenge_count);
+          setEditChallengeExpireMinutes(gameData.challenge_expire_minutes);
         }
       } catch {
-        // Network error or JSON parse failure — skip this poll cycle
+        // Network error — skip this poll cycle
       }
     };
     fetchData();
@@ -145,7 +155,6 @@ export default function AdminLivePage() {
 
     const currentIds = new Set(challenges.map((c) => c.id));
 
-    // Remove stale markers
     markersRef.current.forEach((marker, id) => {
       if (!currentIds.has(id)) {
         marker.remove();
@@ -153,16 +162,15 @@ export default function AdminLivePage() {
       }
     });
 
-    // Add/update markers
     challenges.forEach((c) => {
       const color =
         c.status === 'claimed' ? '#2ecc71'
         : c.status === 'active' ? '#f39c12'
+        : c.status === 'expired' ? '#e74c3c'
         : '#666';
 
       const existing = markersRef.current.get(c.id);
       if (existing) {
-        // Update color
         existing.getElement().style.background = color;
         return;
       }
@@ -181,7 +189,12 @@ export default function AdminLivePage() {
     const res = await fetch(`/api/games/${gameId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: editName, durationMinutes: editDuration }),
+      body: JSON.stringify({
+        name: editName,
+        durationMinutes: editDuration,
+        activeChallengeCount: editActiveChallengeCount,
+        challengeExpireMinutes: editChallengeExpireMinutes,
+      }),
     });
     if (res.ok) {
       const updated = await res.json();
@@ -200,6 +213,12 @@ export default function AdminLivePage() {
   }
 
   const gameStatus = game?.status ?? 'loading';
+  const statusChallenges = {
+    queued: challenges.filter((c) => c.status === 'queued'),
+    active: challenges.filter((c) => c.status === 'active'),
+    claimed: challenges.filter((c) => c.status === 'claimed'),
+    expired: challenges.filter((c) => c.status === 'expired'),
+  };
 
   return (
     <div className="admin-layout" style={{ display: 'flex', height: '100vh' }}>
@@ -209,7 +228,7 @@ export default function AdminLivePage() {
       {/* Sidebar */}
       <div className="admin-sidebar" style={{ width: 350, background: '#1a1a2e', color: 'white', overflow: 'auto', padding: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <h2 style={{ margin: 0 }}>Admin Panel</h2>
+          <h2 style={{ margin: 0 }}>Admin Dashboard</h2>
           <a href={`/game/${gameId}/admin/setup`}
             style={{ color: '#3498db', textDecoration: 'none', fontSize: 14 }}>
             Edit Challenges
@@ -252,11 +271,29 @@ export default function AdminLivePage() {
             onChange={(e) => { setEditName(e.target.value); setSettingsDirty(true); }}
             style={{ padding: 6, borderRadius: 4, border: '1px solid #444', background: '#2a2a3e', color: 'white' }}
           />
-          <label style={{ fontSize: 12, opacity: 0.5 }}>Duration (minutes)</label>
-          <input type="number" value={editDuration} min={10} max={480}
-            onChange={(e) => { setEditDuration(Number(e.target.value)); setSettingsDirty(true); }}
-            style={{ padding: 6, borderRadius: 4, border: '1px solid #444', background: '#2a2a3e', color: 'white', width: 100 }}
-          />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 12, opacity: 0.5 }}>Duration (min)</label>
+              <input type="number" value={editDuration} min={10} max={480}
+                onChange={(e) => { setEditDuration(Number(e.target.value)); setSettingsDirty(true); }}
+                style={{ padding: 6, borderRadius: 4, border: '1px solid #444', background: '#2a2a3e', color: 'white', width: '100%' }}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 12, opacity: 0.5 }}>Active (K)</label>
+              <input type="number" value={editActiveChallengeCount} min={1} max={20}
+                onChange={(e) => { setEditActiveChallengeCount(Number(e.target.value)); setSettingsDirty(true); }}
+                style={{ padding: 6, borderRadius: 4, border: '1px solid #444', background: '#2a2a3e', color: 'white', width: '100%' }}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 12, opacity: 0.5 }}>Expire (min)</label>
+              <input type="number" value={editChallengeExpireMinutes} min={1} max={120}
+                onChange={(e) => { setEditChallengeExpireMinutes(Number(e.target.value)); setSettingsDirty(true); }}
+                style={{ padding: 6, borderRadius: 4, border: '1px solid #444', background: '#2a2a3e', color: 'white', width: '100%' }}
+              />
+            </div>
+          </div>
           {settingsDirty && (
             <button onClick={handleSaveSettings}
               style={{ padding: 6, background: '#3498db', border: 'none', borderRadius: 4, color: 'white', cursor: 'pointer', alignSelf: 'flex-start' }}>
@@ -284,15 +321,28 @@ export default function AdminLivePage() {
           <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <span style={{ width: 12, height: 12, borderRadius: '50%', background: t.color }} />
             <span>{t.name}</span>
+            {t.active_challenge_id && (
+              <span style={{ fontSize: 11, opacity: 0.5 }}>(active)</span>
+            )}
             <span style={{ marginLeft: 'auto', fontWeight: 'bold' }}>{t.score} pts</span>
           </div>
         ))}
 
         {/* Challenges */}
         <h3>Challenges ({challenges.length})</h3>
-        {challenges.map((c) => (
+        <div style={{ fontSize: 12, opacity: 0.5, marginBottom: 4 }}>
+          {statusChallenges.queued.length} queued | {statusChallenges.active.length} active | {statusChallenges.claimed.length} claimed | {statusChallenges.expired.length} expired
+        </div>
+        {challenges
+          .sort((a, b) => a.sort_order - b.sort_order)
+          .map((c) => (
           <div key={c.id} style={{ marginBottom: 4, fontSize: 13 }}>
-            <span style={{ color: c.status === 'claimed' ? '#2ecc71' : c.status === 'active' ? '#f39c12' : '#666' }}>
+            <span style={{
+              color: c.status === 'claimed' ? '#2ecc71'
+                : c.status === 'active' ? '#f39c12'
+                : c.status === 'expired' ? '#e74c3c'
+                : '#666',
+            }}>
               [{c.status}]
             </span>{' '}
             {c.name} ({c.points} pts)

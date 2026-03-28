@@ -7,9 +7,8 @@ import { useGameStore } from '../store';
 import { socket } from '../socket';
 import { registerSocketHandlers } from '../socketHandlers';
 import { HEARTBEAT_INTERVAL_MS } from '@t4al/shared';
-import type { Challenge } from '@t4al/shared';
+import type { Challenge, TeamSnapshot } from '@t4al/shared';
 import Leaderboard from '../components/Leaderboard';
-import ModeBanner from '../components/ModeBanner';
 import GameHUD from '../components/GameHUD';
 
 ensurePmtilesProtocol();
@@ -23,6 +22,11 @@ function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number):
     Math.sin(dLat / 2) ** 2 +
     Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/** Get team colors working on a challenge (for pie chart visual) */
+function getTeamsOnChallenge(challengeId: string, teamSnapshots: TeamSnapshot[]): TeamSnapshot[] {
+  return teamSnapshots.filter((t) => t.activeChallengeId === challengeId);
 }
 
 export default function GamePage() {
@@ -39,21 +43,20 @@ export default function GamePage() {
   const gameStatus = useGameStore((s) => s.gameStatus);
   const teamColor = useGameStore((s) => s.teamColor);
   const gameId = useGameStore((s) => s.gameId);
+  const teamSnapshots = useGameStore((s) => s.teamSnapshots);
 
   const [selectedChallengeId, setSelectedChallengeId] = useState<string | null>(null);
   const [myPos, setMyPos] = useState<{ lat: number; lng: number } | null>(null);
 
-  // Derive selectedChallenge from store so it's always fresh
   const selectedChallenge = selectedChallengeId ? challenges[selectedChallengeId] ?? null : null;
 
-  // Register handlers first so no events are missed during connect
   useEffect(() => {
     registerSocketHandlers();
   }, []);
 
   // Restore identity from sessionStorage on refresh, or redirect to join
   useEffect(() => {
-    if (gameId && teamId) return; // already have identity
+    if (gameId && teamId) return;
     const saved = sessionStorage.getItem('t4al_identity');
     if (!saved) {
       navigate('/join');
@@ -62,7 +65,7 @@ export default function GamePage() {
     try {
       const { gameId: gid, teamId: tid, teamColor: tc } = JSON.parse(saved);
       useGameStore.getState().setIdentity(gid, tid, tc);
-      registerSocketHandlers(); // ensure handlers ready before join
+      registerSocketHandlers();
       socket.connect();
       socket.emit('game:join', { gameId: gid, teamId: tid });
     } catch {
@@ -91,7 +94,6 @@ export default function GamePage() {
       { enableHighAccuracy: true },
     );
 
-    // Send location to server on interval (reads from ref to avoid stale closure)
     const heartbeat = setInterval(() => {
       const pos = myPosRef.current;
       if (pos) {
@@ -149,7 +151,7 @@ export default function GamePage() {
     const challengeList = Object.values(challenges);
     const currentIds = new Set(challengeList.map((c) => c.id));
 
-    // Remove stale markers
+    // Remove stale markers (claimed/expired challenges removed from store)
     markersRef.current.forEach((marker, id) => {
       if (!currentIds.has(id)) {
         marker.remove();
@@ -157,20 +159,21 @@ export default function GamePage() {
       }
     });
 
-    // Add/update markers
+    // Add/update markers for active challenges
     challengeList.forEach((c) => {
-      if (c.status === 'scheduled') return;
+      if (c.status !== 'active') return;
 
+      const teamsOnIt = getTeamsOnChallenge(c.id, teamSnapshots);
       const existing = markersRef.current.get(c.id);
+
       if (existing) {
         existing.setLngLat([c.lng, c.lat]);
-        // Update style (individual props to preserve MapLibre's transform)
-        applyMarkerStyle(existing.getElement(), c, activeChallengeId, teamId);
+        applyMarkerStyle(existing.getElement(), c, activeChallengeId, teamId, teamsOnIt);
         return;
       }
 
       const el = document.createElement('div');
-      applyMarkerStyle(el, c, activeChallengeId, teamId);
+      applyMarkerStyle(el, c, activeChallengeId, teamId, teamsOnIt);
       el.addEventListener('click', (e) => {
         e.stopPropagation();
         setSelectedChallengeId(c.id);
@@ -178,18 +181,25 @@ export default function GamePage() {
       const marker = new maplibregl.Marker({ element: el }).setLngLat([c.lng, c.lat]).addTo(map);
       markersRef.current.set(c.id, marker);
     });
-  }, [challenges, activeChallengeId, teamId]);
+  }, [challenges, activeChallengeId, teamId, teamSnapshots]);
+
+  // Deselect challenge if it was removed (claimed/expired)
+  useEffect(() => {
+    if (selectedChallengeId && !challenges[selectedChallengeId]) {
+      setSelectedChallengeId(null);
+    }
+  }, [challenges, selectedChallengeId]);
 
   const handleActivate = useCallback(() => {
     if (!selectedChallenge || !teamId) return;
     socket.emit('challenge:activate', { challengeId: selectedChallenge.id, teamId });
-    useGameStore.getState().setActiveChallengeId(selectedChallenge.id);
+    // Optimistic update handled by challenge:activated broadcast
   }, [selectedChallenge, teamId]);
 
   const handleAbandon = useCallback(() => {
     if (!activeChallengeId || !teamId) return;
     socket.emit('challenge:abandon', { challengeId: activeChallengeId, teamId });
-    useGameStore.getState().setActiveChallengeId(null);
+    // Optimistic update handled by challenge:abandoned broadcast
     setSelectedChallengeId(null);
   }, [activeChallengeId, teamId]);
 
@@ -210,7 +220,6 @@ export default function GamePage() {
     <div style={{ position: 'relative', width: '100%', height: '100vh' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
 
-      <ModeBanner />
       <GameHUD />
       <Leaderboard />
 
@@ -247,11 +256,7 @@ export default function GamePage() {
 
           {isMyActive && <p style={{ marginTop: 8, opacity: 0.8 }}>{selectedChallenge.description}</p>}
 
-          {selectedChallenge.status === 'claimed' ? (
-            <p style={{ opacity: 0.6, marginTop: 8 }}>
-              Claimed{selectedChallenge.claimedByTeamId === teamId ? ' by your team!' : ''}
-            </p>
-          ) : isMyActive ? (
+          {isMyActive ? (
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
               <button onClick={handleComplete} style={{ flex: 1, padding: '12px 10px', background: '#2ecc71', border: 'none', borderRadius: 6, color: 'white', fontWeight: 'bold', fontSize: 15 }}>
                 Mark Complete
@@ -284,34 +289,39 @@ export default function GamePage() {
   );
 }
 
-/** Apply marker style using individual properties (not cssText) to preserve MapLibre's transform. */
-function applyMarkerStyle(el: HTMLElement, challenge: Challenge, activeChallengeId: string | null, teamId: string | null) {
+/** Apply marker style — pie chart when teams are working on it */
+function applyMarkerStyle(
+  el: HTMLElement,
+  challenge: Challenge,
+  activeChallengeId: string | null,
+  teamId: string | null,
+  teamsOnIt: TeamSnapshot[],
+) {
   el.style.width = '20px';
   el.style.height = '20px';
   el.style.borderRadius = '50%';
   el.style.cursor = 'pointer';
 
-  if (challenge.status === 'claimed') {
-    if (challenge.claimedByTeamId === teamId) {
-      el.style.background = '#2ecc71';
-      el.style.border = '2px solid white';
-      el.style.opacity = '0.8';
-      el.style.boxShadow = 'none';
-    } else {
-      el.style.background = '#666';
-      el.style.border = '2px solid #999';
-      el.style.opacity = '0.5';
-      el.style.boxShadow = 'none';
-    }
-  } else if (challenge.id === activeChallengeId) {
-    el.style.background = '#3498db';
+  if (challenge.id === activeChallengeId) {
+    // Our active challenge — highlighted
     el.style.border = '3px solid white';
     el.style.boxShadow = '0 0 10px #3498db';
     el.style.opacity = '1';
   } else {
-    el.style.background = '#f39c12';
     el.style.border = '2px solid white';
     el.style.boxShadow = 'none';
     el.style.opacity = '1';
+  }
+
+  if (teamsOnIt.length > 0) {
+    // Pie chart: conic gradient with team colors
+    const sliceAngle = 360 / teamsOnIt.length;
+    const stops = teamsOnIt.map((t, i) =>
+      `${t.color} ${i * sliceAngle}deg ${(i + 1) * sliceAngle}deg`
+    ).join(', ');
+    el.style.background = `conic-gradient(${stops})`;
+  } else {
+    // Default orange pin
+    el.style.background = '#f39c12';
   }
 }
