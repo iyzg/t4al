@@ -58,6 +58,7 @@ test.describe('Admin Event Log - Queue Events', () => {
     expect(claimEvent).toBeDefined();
     expect(claimEvent.payload.points).toBe(777);
     expect(claimEvent.payload.challengeName).toBe('Claim Event');
+    expect(claimEvent.payload.teamName).toBe('Claimer');
   });
 
   test('game:ended event logged when admin ends game', async () => {
