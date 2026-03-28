@@ -42,7 +42,7 @@ test.describe('Admin Complete Workflow', () => {
 
     await api('POST', `/games/${gameId}/challenges`, {
       name: 'Workflow Challenge', description: 'Test', points: 100,
-      lat: 41.8827, lng: -87.6233, spawnOffsetMinutes: 0,
+      lat: 41.8827, lng: -87.6233, sortOrder: 1,
     });
 
     // Wait for next poll cycle
@@ -76,7 +76,7 @@ test.describe('Admin Complete Workflow', () => {
 
     // Go to admin panel
     await page.goto(`/game/${game.id}/admin`);
-    await expect(page.locator('text=ACTIVE')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('ACTIVE', { exact: true }).first()).toBeVisible({ timeout: 10000 });
 
     // End the game
     page.on('dialog', (dialog) => dialog.accept());

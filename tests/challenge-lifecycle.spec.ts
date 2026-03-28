@@ -24,15 +24,16 @@ async function setupActiveGame() {
 }
 
 test.describe('Challenge Lifecycle', () => {
-  test('claim a scheduled challenge fails', async () => {
-    const { data: game } = await api('POST', '/games', { name: 'Scheduled Claim' });
+  test('claim a queued challenge fails', async () => {
+    // activeChallengeCount=0 means no challenges will activate
+    const { data: game } = await api('POST', '/games', { name: 'Queued Claim', activeChallengeCount: 0 });
     const { data: team } = await api('POST', `/games/${game.id}/teams`, { name: 'T', color: '#e74c3c' });
     const { data: c } = await api('POST', `/games/${game.id}/challenges`, {
-      name: 'Not Spawned', description: 'D', points: 100, lat: 41.88, lng: -87.62, spawnOffsetMinutes: 999,
+      name: 'Not Spawned', description: 'D', points: 100, lat: 41.88, lng: -87.62, sortOrder: 1,
     });
     await api('POST', `/games/${game.id}/start`);
 
-    // Challenge is still scheduled (offset=999 min)
+    // Challenge is still queued (activeChallengeCount=0)
     const { status } = await api('POST', `/challenges/${c.id}/claim`, { teamId: team.id });
     expect(status).toBe(400);
   });
@@ -92,10 +93,10 @@ test.describe('Challenge Lifecycle', () => {
     expect(teams.find((t: any) => t.id === team2.id).score).toBe(0);
   });
 
-  test('challenge with 0 offset spawns immediately after game start', async () => {
-    const { data: game } = await api('POST', '/games', { name: 'Zero Offset' });
+  test('first queued challenge activates after game start', async () => {
+    const { data: game } = await api('POST', '/games', { name: 'Queue Activate' });
     await api('POST', `/games/${game.id}/challenges`, {
-      name: 'Instant', description: 'D', points: 50, lat: 41.88, lng: -87.62, spawnOffsetMinutes: 0,
+      name: 'Instant', description: 'D', points: 50, lat: 41.88, lng: -87.62, sortOrder: 1,
     });
     await api('POST', `/games/${game.id}/start`);
 
@@ -104,7 +105,6 @@ test.describe('Challenge Lifecycle', () => {
 
     const { data: challenges } = await api('GET', `/games/${game.id}/challenges`);
     expect(challenges[0].status).toBe('active');
-    expect(challenges[0].spawned_at).toBeTruthy();
   });
 
   test('ended game: no further claims possible', async () => {

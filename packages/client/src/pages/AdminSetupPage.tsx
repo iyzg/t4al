@@ -322,20 +322,20 @@ export default function AdminSetupPage() {
       {/* Top bar */}
       {!popover && !showOrderPanel && (
         <div style={{
-          position: 'absolute', top: 16, left: 16,
+          position: 'absolute', top: 16, left: 16, right: 16,
           background: 'rgba(0,0,0,0.7)', color: 'white',
           padding: '8px 16px', borderRadius: 8,
-          display: 'flex', alignItems: 'center', gap: 16,
+          display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
         }}>
-          <span>Click map to create challenge</span>
+          <span style={{ flex: '1 1 auto' }}>Click anywhere on the map to create a challenge</span>
           <button
             onClick={() => setShowOrderPanel(true)}
-            style={{ padding: '4px 12px', background: '#3498db', border: 'none', borderRadius: 4, color: 'white', cursor: 'pointer' }}>
+            style={{ padding: '4px 12px', background: '#3498db', border: 'none', borderRadius: 4, color: 'white', cursor: 'pointer', whiteSpace: 'nowrap' }}>
             Challenge Order ({challenges.length})
           </button>
           <a href={`/game/${gameId}/admin`}
             style={{ color: '#3498db', textDecoration: 'none', whiteSpace: 'nowrap' }}>
-            Back to Admin
+            Back to Admin Panel
           </a>
         </div>
       )}

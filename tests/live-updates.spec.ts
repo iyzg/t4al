@@ -44,21 +44,21 @@ test.describe('Live Update Verification', () => {
     await ss(page, 'live-03-admin-new-team');
   });
 
-  test('admin panel shows challenge status change after spawn', async ({ page }) => {
+  test('admin panel shows challenge status change after activation', async ({ page }) => {
     const { data: game } = await api('POST', '/games', { name: 'Live: Spawn' });
     await api('POST', `/games/${game.id}/challenges`, {
       name: 'Spawn Watch', description: 'D', points: 100,
-      lat: 41.88, lng: -87.62, spawnOffsetMinutes: 0,
+      lat: 41.88, lng: -87.62, sortOrder: 1,
     });
     await page.goto(`/game/${game.id}/admin`);
 
-    // Should show scheduled
-    await expect(page.locator('text=[scheduled]')).toBeVisible({ timeout: 5000 });
+    // Should show queued
+    await expect(page.locator('text=[queued]')).toBeVisible({ timeout: 5000 });
 
     // Start game
     await api('POST', `/games/${game.id}/start`);
 
-    // Wait for ticker to spawn + poll to update
+    // Wait for ticker to activate + poll to update
     await expect(page.locator('text=[active]')).toBeVisible({ timeout: 20000 });
     await ss(page, 'live-04-admin-challenge-spawned');
   });

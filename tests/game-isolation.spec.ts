@@ -58,15 +58,17 @@ test.describe('Game Isolation', () => {
     expect(b.status).toBe('active');
   });
 
-  test('challenges in different games have independent spawn timing', async () => {
-    const { data: gameA } = await api('POST', '/games', { name: 'Spawn A' });
-    const { data: gameB } = await api('POST', '/games', { name: 'Spawn B' });
+  test('challenges in different games have independent queues', async () => {
+    // Game A: activeChallengeCount=1, so 1 challenge activates immediately
+    const { data: gameA } = await api('POST', '/games', { name: 'Spawn A', activeChallengeCount: 1 });
+    // Game B: activeChallengeCount=0, so nothing activates
+    const { data: gameB } = await api('POST', '/games', { name: 'Spawn B', activeChallengeCount: 0 });
 
     await api('POST', `/games/${gameA.id}/challenges`, {
-      name: 'A-Instant', description: 'D', points: 100, lat: 41.88, lng: -87.62, spawnOffsetMinutes: 0,
+      name: 'A-Instant', description: 'D', points: 100, lat: 41.88, lng: -87.62, sortOrder: 1,
     });
     await api('POST', `/games/${gameB.id}/challenges`, {
-      name: 'B-Delayed', description: 'D', points: 100, lat: 41.88, lng: -87.62, spawnOffsetMinutes: 999,
+      name: 'B-Queued', description: 'D', points: 100, lat: 41.88, lng: -87.62, sortOrder: 1,
     });
 
     // Start both
@@ -74,11 +76,11 @@ test.describe('Game Isolation', () => {
     await api('POST', `/games/${gameB.id}/start`);
     await new Promise(r => setTimeout(r, 12000));
 
-    // A's challenge should be active, B's should still be scheduled
+    // A's challenge should be active, B's should still be queued
     const { data: challsA } = await api('GET', `/games/${gameA.id}/challenges`);
     const { data: challsB } = await api('GET', `/games/${gameB.id}/challenges`);
     expect(challsA[0].status).toBe('active');
-    expect(challsB[0].status).toBe('scheduled');
+    expect(challsB[0].status).toBe('queued');
   });
 
   test('leaderboards are independent between games', async () => {

@@ -64,7 +64,7 @@ test.describe('Admin Live Panel', () => {
     await page.click('button:has-text("Start Game")');
 
     // Wait for poll to update — should show ACTIVE status
-    await expect(page.locator('text=ACTIVE')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('ACTIVE', { exact: true }).first()).toBeVisible({ timeout: 10000 });
   });
 
   test('end game button works after starting', async ({ page }) => {
@@ -72,7 +72,7 @@ test.describe('Admin Live Panel', () => {
     await page.goto(`/game/${game.id}/admin`);
 
     await page.click('button:has-text("Start Game")');
-    await expect(page.locator('text=ACTIVE')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('ACTIVE', { exact: true }).first()).toBeVisible({ timeout: 10000 });
 
     // End button should now work (need to handle confirm dialog)
     page.on('dialog', (dialog) => dialog.accept());
@@ -117,7 +117,7 @@ test.describe('Admin Live Panel', () => {
 
     await page.goto(`/game/${game.id}/admin`);
     // Should show a countdown in MM:SS format
-    await expect(page.locator('text=ACTIVE')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('ACTIVE', { exact: true }).first()).toBeVisible({ timeout: 5000 });
     // The countdown should be visible (monospace styled)
     const timer = page.locator('span[style*="monospace"]');
     await expect(timer).toBeVisible({ timeout: 5000 });
@@ -148,7 +148,7 @@ test.describe('Admin Setup Page', () => {
     // Create a challenge via API
     const { data: challenge } = await api('POST', `/games/${game.id}/challenges`, {
       name: 'API Challenge', description: 'Created via API', points: 250,
-      lat: 41.8827, lng: -87.6233, spawnOffsetMinutes: 5,
+      lat: 41.8827, lng: -87.6233, sortOrder: 1,
     });
 
     // Load setup page — should show the challenge marker (golden dot)

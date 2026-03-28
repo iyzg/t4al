@@ -21,7 +21,7 @@ test.describe('Socket.io Game Lifecycle', () => {
     const { data: team2 } = await api('POST', `/games/${game.id}/teams`, { name: 'Late Comer', color: '#3498db' });
     await api('POST', `/games/${game.id}/challenges`, {
       name: 'Already Spawned', description: 'Should be visible', points: 300,
-      lat: 41.8827, lng: -87.6233, spawnOffsetMinutes: 0,
+      lat: 41.8827, lng: -87.6233, sortOrder: 1,
     });
     await api('POST', `/games/${game.id}/start`);
 
@@ -52,7 +52,7 @@ test.describe('Socket.io Game Lifecycle', () => {
     const { data: team } = await api('POST', `/games/${game.id}/teams`, { name: 'Socket Team', color: '#e74c3c' });
     const { data: challenge } = await api('POST', `/games/${game.id}/challenges`, {
       name: 'Instant Challenge', description: 'Spawns immediately', points: 100,
-      lat: 41.8827, lng: -87.6233, spawnOffsetMinutes: 0,
+      lat: 41.8827, lng: -87.6233, sortOrder: 1,
     });
     await api('POST', `/games/${game.id}/start`);
 
@@ -113,7 +113,7 @@ test.describe('Socket.io Game Lifecycle', () => {
     const { data: team } = await api('POST', `/games/${game.id}/teams`, { name: 'Claimers', color: '#fff' });
     const { data: challenge } = await api('POST', `/games/${game.id}/challenges`, {
       name: 'Claimable', description: 'D', points: 500,
-      lat: 41.88, lng: -87.62, spawnOffsetMinutes: 0,
+      lat: 41.88, lng: -87.62, sortOrder: 1,
     });
     await api('POST', `/games/${game.id}/start`);
 

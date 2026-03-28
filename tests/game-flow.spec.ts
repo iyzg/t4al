@@ -15,7 +15,7 @@ async function api(method: string, path: string, body?: any) {
 async function setupGame(opts: {
   name: string;
   teams: { name: string; color: string }[];
-  challenges: { name: string; description: string; points: number; lat: number; lng: number; spawnOffsetMinutes?: number }[];
+  challenges: { name: string; description: string; points: number; lat: number; lng: number; sortOrder?: number }[];
 }) {
   const { data: game } = await api('POST', '/games', { name: opts.name, durationMinutes: 60 });
   const teams = [];
@@ -24,9 +24,10 @@ async function setupGame(opts: {
     teams.push(data);
   }
   const challenges = [];
-  for (const c of opts.challenges) {
+  for (let i = 0; i < opts.challenges.length; i++) {
+    const c = opts.challenges[i];
     const { data } = await api('POST', `/games/${game.id}/challenges`, {
-      ...c, spawnOffsetMinutes: c.spawnOffsetMinutes ?? 0,
+      ...c, sortOrder: c.sortOrder ?? (i + 1),
     });
     challenges.push(data);
   }
@@ -249,26 +250,28 @@ test.describe('Flow 4: Game end during play', () => {
 });
 
 // ═══════════════════════════════════════════════════════════
-// Flow 5: Delayed challenge spawn
+// Flow 5: Queue-based challenge activation
 // ═══════════════════════════════════════════════════════════
-test.describe('Flow 5: Staggered spawns', () => {
-  test('challenge with offset=0 spawns immediately, offset=1 does not', async () => {
-    const { game, challenges } = await setupGame({
-      name: 'Flow 5: Stagger',
-      teams: [{ name: 'Waiter', color: '#e74c3c' }],
-      challenges: [
-        { name: 'Instant', description: 'Now', points: 50, lat: 41.88, lng: -87.62, spawnOffsetMinutes: 0 },
-        { name: 'Delayed', description: 'Later', points: 150, lat: 41.89, lng: -87.62, spawnOffsetMinutes: 5 },
-      ],
+test.describe('Flow 5: Queue-based activation', () => {
+  test('only activeChallengeCount challenges activate, rest stay queued', async () => {
+    // activeChallengeCount=1 means only one challenge active at a time
+    const { data: game } = await api('POST', '/games', { name: 'Flow 5: Queue', durationMinutes: 60, activeChallengeCount: 1 });
+    const { data: team } = await api('POST', `/games/${game.id}/teams`, { name: 'Waiter', color: '#e74c3c' });
+    await api('POST', `/games/${game.id}/challenges`, {
+      name: 'First', description: 'Now', points: 50, lat: 41.88, lng: -87.62, sortOrder: 1,
     });
+    await api('POST', `/games/${game.id}/challenges`, {
+      name: 'Second', description: 'Later', points: 150, lat: 41.89, lng: -87.62, sortOrder: 2,
+    });
+    await api('POST', `/games/${game.id}/start`);
 
-    // Wait for ticker (10s) — only instant should spawn
+    // Wait for ticker (10s) — only first should activate
     await new Promise(r => setTimeout(r, 12000));
 
     const { data: cList } = await api('GET', `/games/${game.id}/challenges`);
-    const instant = cList.find((c: any) => c.name === 'Instant');
-    const delayed = cList.find((c: any) => c.name === 'Delayed');
-    expect(instant.status).toBe('active');
-    expect(delayed.status).toBe('scheduled'); // Still waiting
+    const first = cList.find((c: any) => c.name === 'First');
+    const second = cList.find((c: any) => c.name === 'Second');
+    expect(first.status).toBe('active');
+    expect(second.status).toBe('queued'); // Still waiting in queue
   });
 });

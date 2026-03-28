@@ -228,7 +228,7 @@ export default function AdminLivePage() {
       {/* Sidebar */}
       <div className="admin-sidebar" style={{ width: 350, background: '#1a1a2e', color: 'white', overflow: 'auto', padding: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <h2 style={{ margin: 0 }}>Admin Dashboard</h2>
+          <h2 style={{ margin: 0 }}>Admin Panel</h2>
           <a href={`/game/${gameId}/admin/setup`}
             style={{ color: '#3498db', textDecoration: 'none', fontSize: 14 }}>
             Edit Challenges
