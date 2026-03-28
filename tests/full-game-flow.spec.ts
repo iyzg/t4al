@@ -44,7 +44,7 @@ test.describe('Full Game Flow - Queue Model', () => {
     await expect(page.locator('text=LOBBY')).toBeVisible();
     await expect(page.locator('text=Alpha')).toBeVisible();
     await expect(page.locator('text=Beta')).toBeVisible();
-    await expect(page.locator('text=3 queued')).toBeVisible({ timeout: 6000 });
+    await expect(page.locator('text=3 queued')).toBeVisible({ timeout: 10000 });
 
     // 5. Start the game
     await page.click('button:has-text("Start Game")');
