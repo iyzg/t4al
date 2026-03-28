@@ -1,8 +1,6 @@
-import type { Challenge, LeaderboardEntry, LeaderboardMode, SegmentMode } from './types.js';
+import type { Challenge, Game, LeaderboardEntry, TeamSnapshot } from './types.js';
 
 // ── Payload types ──
-// Each WebSocket event carries a typed payload so both sides
-// know exactly what data to send/expect.
 
 export interface LocationUpdatePayload {
   teamId: string;
@@ -31,25 +29,29 @@ export interface ChallengeClaimedPayload {
   points: number;
 }
 
-export interface LeaderboardUpdatePayload {
-  teams: LeaderboardEntry[];
-  mode: LeaderboardMode;
+export interface ChallengeExpiredPayload {
+  challengeId: string;
 }
 
-export interface ModeChangePayload {
-  mode: LeaderboardMode;
-  segmentMode: SegmentMode | null;
+export interface ChallengeActivatedPayload {
+  challengeId: string;
+  teamId: string;
+}
+
+export interface ChallengeAbandonedPayload {
+  challengeId: string;
+  teamId: string;
+}
+
+export interface LeaderboardUpdatePayload {
+  teams: LeaderboardEntry[];
 }
 
 export interface GameEndedPayload {
   finalScores?: LeaderboardEntry[];
 }
 
-export interface ChallengeUnlockedPayload {
-  challengeId: string;
-}
-
-export interface ChallengeLeftPayload {
+export interface ChallengeYankedPayload {
   challengeId: string;
 }
 
@@ -63,14 +65,13 @@ export interface CompleteFailedPayload {
   reason: 'already_claimed' | 'not_active';
 }
 
-export interface TeamLocationPayload {
-  teamId: string;
-  lat: number;
-  lng: number;
+export interface GameStatePayload {
+  game: Game;
+  teams: TeamSnapshot[];
+  challenges: Challenge[];       // active challenges only
 }
 
 // ── Client → Server events ──
-// These are the messages the team's phone sends to the server.
 
 export interface ClientToServerEvents {
   'challenge:abandon': (data: ChallengeActionPayload) => void;
@@ -82,21 +83,17 @@ export interface ClientToServerEvents {
 
 // ── Server → Client events ──
 
-export interface ActiveRestorePayload {
-  challengeId: string;
-}
-
 export interface ServerToClientEvents {
-  'active:restore': (data: ActiveRestorePayload) => void;
-  'challenge:claimed': (data: ChallengeClaimedPayload) => void;
-  'game:started': (data: Record<string, never>) => void;
-  'challenge:left': (data: ChallengeLeftPayload) => void;
   'challenge:spawned': (data: ChallengeSpawnedPayload) => void;
-  'challenge:unlocked': (data: ChallengeUnlockedPayload) => void;
-  'complete:failed': (data: CompleteFailedPayload) => void;
+  'challenge:claimed': (data: ChallengeClaimedPayload) => void;
+  'challenge:expired': (data: ChallengeExpiredPayload) => void;
+  'challenge:activated': (data: ChallengeActivatedPayload) => void;
+  'challenge:abandoned': (data: ChallengeAbandonedPayload) => void;
+  'challenge:yanked': (data: ChallengeYankedPayload) => void;
   'complete:success': (data: CompleteSuccessPayload) => void;
-  'game:ended': (data: GameEndedPayload) => void;
+  'complete:failed': (data: CompleteFailedPayload) => void;
   'leaderboard:update': (data: LeaderboardUpdatePayload) => void;
-  'mode:change': (data: ModeChangePayload) => void;
-  'team:location': (data: TeamLocationPayload) => void;
+  'game:state': (data: GameStatePayload) => void;
+  'game:started': (data: Record<string, never>) => void;
+  'game:ended': (data: GameEndedPayload) => void;
 }

@@ -1,22 +1,22 @@
 // ── Core data models ──
 
 export type GameStatus = 'lobby' | 'active' | 'ended';
-export type LeaderboardMode = 'full' | 'rank_only' | 'hidden';
 
 export interface Game {
   id: string;
   name: string;
   status: GameStatus;
   durationMinutes: number;
-  startTime: Date | null;       // set when game starts
-  endTime: Date | null;         // computed: startTime + durationMinutes
+  activeChallengeCount: number;       // K — how many challenges active at once
+  challengeExpireMinutes: number;     // challenges expire after this many minutes
+  startTime: Date | null;             // set when game starts
+  endTime: Date | null;               // computed: startTime + durationMinutes
   joinCode: string;
   adminCode: string;
-  leaderboardMode: LeaderboardMode;
   createdAt: Date;
 }
 
-export type ChallengeStatus = 'scheduled' | 'active' | 'claimed';
+export type ChallengeStatus = 'queued' | 'active' | 'claimed' | 'expired';
 
 export interface Challenge {
   id: string;
@@ -31,10 +31,10 @@ export interface Challenge {
   lng: number;
   proximityMeters: number;
 
-  spawnOffsetMinutes: number;
+  sortOrder: number;                  // queue position; admin sets this
 
   status: ChallengeStatus;
-  spawnedAt: Date | null;
+  activatedAt: Date | null;           // when this challenge became active (visible on map)
   claimedByTeamId: string | null;
   claimedAt: Date | null;
 }
@@ -47,16 +47,6 @@ export interface Team {
   score: number;
   activeChallengeId: string | null;
   joinedAt: Date;
-}
-
-export type SegmentMode = 'blackout';
-
-export interface GameModeSegment {
-  id: string;
-  gameId: string;
-  mode: SegmentMode;
-  startOffsetMinutes: number;
-  endOffsetMinutes: number;
 }
 
 export interface LocationHistory {
@@ -84,4 +74,13 @@ export interface LeaderboardEntry {
   color: string;
   score: number;
   rank: number;
+}
+
+// Team info included in game:state snapshot
+export interface TeamSnapshot {
+  id: string;
+  name: string;
+  color: string;
+  score: number;
+  activeChallengeId: string | null;
 }
