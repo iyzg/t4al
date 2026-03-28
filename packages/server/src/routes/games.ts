@@ -2,12 +2,18 @@ import { Router } from 'express';
 import crypto from 'node:crypto';
 import pool from '../db/pool.js';
 import { asyncHandler } from '../asyncHandler.js';
+import { DEFAULT_ACTIVE_CHALLENGE_COUNT, DEFAULT_CHALLENGE_EXPIRE_MINUTES } from '@t4al/shared';
 
 const router = Router();
 
 // POST /api/games — create a new game
 router.post('/', asyncHandler(async (req, res) => {
-  const { name, durationMinutes = 120, leaderboardMode = 'full' } = req.body;
+  const {
+    name,
+    durationMinutes = 120,
+    activeChallengeCount = DEFAULT_ACTIVE_CHALLENGE_COUNT,
+    challengeExpireMinutes = DEFAULT_CHALLENGE_EXPIRE_MINUTES,
+  } = req.body;
 
   if (!name) {
     res.status(400).json({ error: 'name is required' });
@@ -18,10 +24,10 @@ router.post('/', asyncHandler(async (req, res) => {
   const adminCode = crypto.randomBytes(4).toString('hex');
 
   const result = await pool.query(
-    `INSERT INTO games (name, duration_minutes, join_code, admin_code, leaderboard_mode)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO games (name, duration_minutes, active_challenge_count, challenge_expire_minutes, join_code, admin_code)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
-    [name, durationMinutes, joinCode, adminCode, leaderboardMode],
+    [name, durationMinutes, activeChallengeCount, challengeExpireMinutes, joinCode, adminCode],
   );
 
   res.status(201).json(result.rows[0]);
@@ -56,13 +62,15 @@ router.get('/:id', asyncHandler(async (req, res) => {
 
 // PUT /api/games/:id — update game settings
 router.put('/:id', asyncHandler(async (req, res) => {
-  const { name, durationMinutes } = req.body;
+  const { name, durationMinutes, activeChallengeCount, challengeExpireMinutes } = req.body;
   const fields: string[] = [];
   const values: any[] = [];
   let i = 1;
 
   if (name !== undefined) { fields.push(`name = $${i++}`); values.push(name); }
   if (durationMinutes !== undefined) { fields.push(`duration_minutes = $${i++}`); values.push(durationMinutes); }
+  if (activeChallengeCount !== undefined) { fields.push(`active_challenge_count = $${i++}`); values.push(activeChallengeCount); }
+  if (challengeExpireMinutes !== undefined) { fields.push(`challenge_expire_minutes = $${i++}`); values.push(challengeExpireMinutes); }
 
   if (fields.length === 0) {
     res.status(400).json({ error: 'nothing to update' });
@@ -129,7 +137,6 @@ router.post('/:id/end', asyncHandler(async (req, res) => {
     [req.params.id],
   );
 
-  // Notify all connected clients that the game has ended
   const io = req.app.get('io');
   if (io) io.to(req.params.id).emit('game:ended', {});
 
