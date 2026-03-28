@@ -55,33 +55,8 @@ router.get('/', asyncHandler(async (req, res) => {
   res.json(result.rows);
 }));
 
-// PUT /api/challenges/:id — update a challenge (admin edits during setup)
-router.put('/:id', asyncHandler(async (req, res) => {
-  const { name, description, points, lat, lng, proximityMeters, sortOrder } = req.body;
-
-  const result = await pool.query(
-    `UPDATE challenges
-     SET name = COALESCE($2, name),
-         description = COALESCE($3, description),
-         points = COALESCE($4, points),
-         lat = COALESCE($5, lat),
-         lng = COALESCE($6, lng),
-         proximity_meters = COALESCE($7, proximity_meters),
-         sort_order = COALESCE($8, sort_order)
-     WHERE id = $1
-     RETURNING *`,
-    [req.params.id, name, description, points, lat, lng, proximityMeters, sortOrder],
-  );
-
-  if (result.rows.length === 0) {
-    res.status(404).json({ error: 'challenge not found' });
-    return;
-  }
-
-  res.json(result.rows[0]);
-}));
-
 // PUT /api/games/:gameId/challenges/reorder — bulk update sort_order
+// MUST be before /:id route so Express doesn't treat "reorder" as an :id
 router.put('/reorder', asyncHandler(async (req, res) => {
   const { order } = req.body; // array of { id, sortOrder }
 
@@ -112,6 +87,32 @@ router.put('/reorder', asyncHandler(async (req, res) => {
     [req.params.gameId],
   );
   res.json(result.rows);
+}));
+
+// PUT /api/challenges/:id — update a challenge (admin edits during setup)
+router.put('/:id', asyncHandler(async (req, res) => {
+  const { name, description, points, lat, lng, proximityMeters, sortOrder } = req.body;
+
+  const result = await pool.query(
+    `UPDATE challenges
+     SET name = COALESCE($2, name),
+         description = COALESCE($3, description),
+         points = COALESCE($4, points),
+         lat = COALESCE($5, lat),
+         lng = COALESCE($6, lng),
+         proximity_meters = COALESCE($7, proximity_meters),
+         sort_order = COALESCE($8, sort_order)
+     WHERE id = $1
+     RETURNING *`,
+    [req.params.id, name, description, points, lat, lng, proximityMeters, sortOrder],
+  );
+
+  if (result.rows.length === 0) {
+    res.status(404).json({ error: 'challenge not found' });
+    return;
+  }
+
+  res.json(result.rows[0]);
 }));
 
 // DELETE /api/challenges/:id — delete a challenge (admin)

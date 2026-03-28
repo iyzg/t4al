@@ -24,5 +24,6 @@ ALTER TABLE challenges RENAME COLUMN spawned_at TO activated_at;
 -- Update status enum: scheduled -> queued, add expired
 ALTER TABLE challenges DROP CONSTRAINT IF EXISTS challenges_status_check;
 UPDATE challenges SET status = 'queued' WHERE status = 'scheduled';
+ALTER TABLE challenges ALTER COLUMN status SET DEFAULT 'queued';
 ALTER TABLE challenges ADD CONSTRAINT challenges_status_check
   CHECK (status IN ('queued', 'active', 'claimed', 'expired'));
