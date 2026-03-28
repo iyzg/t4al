@@ -160,6 +160,17 @@ router.post('/:id/claim', asyncHandler(async (req, res) => {
 
     await client.query('COMMIT');
 
+    // Log event
+    await pool.query(
+      `INSERT INTO game_events (game_id, type, payload) VALUES ($1, 'challenge:claimed', $2)`,
+      [challenge.game_id, JSON.stringify({
+        challengeId: challenge.id,
+        challengeName: challenge.name,
+        teamId,
+        points: challenge.points,
+      })],
+    ).catch((err: any) => console.error('Failed to log claim event:', err));
+
     // Emit socket events so all connected clients update
     const io = req.app.get('io');
     if (io && challenge.game_id) {
