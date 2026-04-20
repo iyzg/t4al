@@ -1,314 +1,238 @@
+// Socket.io handlers for V2: deviceId-aware game:join, admin:join with
+// adminCode validation, action events with acks. See SPECS §4.1 and §5.
+//
+// All mutating actions go through the lifecycle module so broadcasts +
+// event-log writes are centralized there.
+
 import type { Server, Socket } from 'socket.io';
-import pool from './db/pool.js';
+import type {
+  ActionAck,
+  ChallengeActionPayload,
+  ChallengeCompletePayload,
+  ChallengeWagerPayload,
+  GameJoinPayload,
+  AdminJoinPayload,
+  LocationUpdatePayload,
+  TeamSnapshot,
+} from '@t4al/shared';
+import * as repo from './db/repo.js';
+import * as lifecycle from './lifecycle.js';
+import {
+  devicePings,
+  deviceTeam,
+  registerSocket,
+  unregisterSocket,
+} from './state.js';
 
-// Map a raw SQL challenge row to camelCase for the client
-export function mapChallenge(row: any) {
-  return {
-    id: row.id,
-    gameId: row.game_id,
-    name: row.name,
-    description: row.description,
-    points: row.points,
-    lat: row.lat,
-    lng: row.lng,
-    proximityMeters: row.proximity_meters,
-    sortOrder: row.sort_order,
-    status: row.status,
-    activatedAt: row.activated_at,
-    claimedByTeamId: row.claimed_by_team_id,
-    claimedAt: row.claimed_at,
-  };
-}
-
-// Map a raw SQL game row to camelCase
-export function mapGame(row: any) {
-  return {
-    id: row.id,
-    name: row.name,
-    status: row.status,
-    durationMinutes: row.duration_minutes,
-    activeChallengeCount: row.active_challenge_count,
-    challengeExpireMinutes: row.challenge_expire_minutes,
-    startTime: row.start_time,
-    endTime: row.end_time,
-    joinCode: row.join_code,
-    adminCode: row.admin_code,
-    createdAt: row.created_at,
-  };
-}
-
-/** Build leaderboard data for a game */
-export async function getLeaderboard(gameId: string) {
-  const teamResult = await pool.query(
-    'SELECT id, name, color, score FROM teams WHERE game_id = $1 ORDER BY score DESC',
-    [gameId],
-  );
-  return {
-    teams: teamResult.rows.map((t: any, i: number) => ({
-      id: t.id, name: t.name, color: t.color, score: t.score, rank: i + 1,
-    })),
-  };
-}
-
-/** Log a game event for the admin event log */
-async function logEvent(gameId: string, type: string, payload: Record<string, unknown> = {}) {
-  try {
-    await pool.query(
-      `INSERT INTO game_events (game_id, type, payload) VALUES ($1, $2, $3)`,
-      [gameId, type, JSON.stringify(payload)],
-    );
-  } catch (err) {
-    console.error('Failed to log event:', err);
-  }
-}
-
-// In-memory store for current team positions (used for admin map display)
-const currentPositions = new Map<string, { lat: number; lng: number; updatedAt: Date }>();
-
-// Pending location writes, flushed to DB every 5s
-const locationBuffer: { teamId: string; gameId: string; lat: number; lng: number }[] = [];
+function gameRoom(gameId: string)  { return `game:${gameId}`; }
+function teamRoom(teamId: string)  { return `team:${teamId}`; }
+function adminRoom(gameId: string) { return `admin:${gameId}`; }
 
 export function registerSocketHandlers(io: Server) {
-  // Flush location buffer to DB every 5 seconds
-  setInterval(async () => {
-    if (locationBuffer.length === 0) return;
-    const batch = locationBuffer.splice(0, locationBuffer.length);
-    const values = batch
-      .map((_, i) => `($${i * 4 + 1}, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4})`)
-      .join(', ');
-    const params = batch.flatMap((l) => [l.teamId, l.gameId, l.lat, l.lng]);
-    try {
-      await pool.query(
-        `INSERT INTO location_history (team_id, game_id, lat, lng) VALUES ${values}`,
-        params,
-      );
-    } catch (err) {
-      console.error('Failed to flush location buffer:', err);
-    }
-  }, 5_000);
-
   io.on('connection', (socket) => {
     console.log('client connected:', socket.id);
 
-    // ── game:join ──
-    // Sends a full game:state snapshot on join/reconnect
-    socket.on('game:join', async (data) => {
-      if (!data?.gameId || !data?.teamId) return;
-      // Leave previous game room if switching games
-      if (socket.data.gameId && socket.data.gameId !== data.gameId) {
-        socket.leave(socket.data.gameId);
+    // ── game:join ──────────────────────────────────────────────────────
+    socket.on('game:join', async (data: GameJoinPayload) => {
+      if (!data?.gameId || !data?.teamId || !data?.deviceId) return;
+
+      // Verify team exists in this game
+      const team = await repo.getTeam(data.teamId);
+      if (!team || team.gameId !== data.gameId) return;
+
+      const game = await repo.getGame(data.gameId);
+      if (!game) return;
+
+      // Leave prior rooms if re-joining from a different game/team
+      const prevGameId = socket.data.gameId;
+      const prevTeamId = socket.data.teamId;
+      const prevDeviceId = socket.data.deviceId;
+      if (prevGameId && prevGameId !== data.gameId) socket.leave(gameRoom(prevGameId));
+      if (prevTeamId && prevTeamId !== data.teamId) socket.leave(teamRoom(prevTeamId));
+      if (prevDeviceId && prevDeviceId !== data.deviceId) {
+        unregisterSocket(prevDeviceId, socket);
       }
-      socket.join(data.gameId);
-      socket.data.gameId = data.gameId;
-      socket.data.teamId = data.teamId;
-      console.log(`team ${data.teamId} joined game ${data.gameId}`);
-      logEvent(data.gameId, 'team:joined', { teamId: data.teamId });
 
-      // Send full game:state snapshot
-      try {
-        const [gameResult, teamResult, challengeResult] = await Promise.all([
-          pool.query('SELECT * FROM games WHERE id = $1', [data.gameId]),
-          pool.query('SELECT id, name, color, score, active_challenge_id FROM teams WHERE game_id = $1 ORDER BY score DESC', [data.gameId]),
-          pool.query(`SELECT * FROM challenges WHERE game_id = $1 AND status = 'active' ORDER BY sort_order`, [data.gameId]),
-        ]);
+      // Join rooms
+      socket.join(gameRoom(data.gameId));
+      socket.join(teamRoom(data.teamId));
+      socket.data.gameId   = data.gameId;
+      socket.data.teamId   = data.teamId;
+      socket.data.deviceId = data.deviceId;
+      socket.data.isAdmin  = false;
 
-        const gameRow = gameResult.rows[0];
-        if (!gameRow) return;
+      // Track device → team
+      deviceTeam.set(data.deviceId, { gameId: data.gameId, teamId: data.teamId });
+      registerSocket(data.deviceId, socket);
 
-        socket.emit('game:state', {
-          game: mapGame(gameRow),
-          teams: teamResult.rows.map((t: any) => ({
-            id: t.id,
-            name: t.name,
-            color: t.color,
-            score: t.score,
-            activeChallengeId: t.active_challenge_id,
-          })),
-          challenges: challengeResult.rows.map(mapChallenge),
-        });
-      } catch (err) {
-        console.error('Failed to send game:state:', err);
-      }
+      // Emit game:state snapshot
+      const teams = await repo.listTeams(data.gameId);
+      const teamSnapshots: TeamSnapshot[] = teams.map((t) => ({
+        id: t.id,
+        name: t.name,
+        color: t.color,
+        tokens: t.tokens,
+        activeChallengeId: t.activeChallengeId,
+      }));
+      const challenges = await repo.listActiveChallenges(data.gameId);
+      socket.emit('game:state', { game, teams: teamSnapshots, challenges });
+
+      // Emit team:state (private) to this team's room
+      lifecycle.emitTeamState(io, data.teamId);
     });
 
-    // ── location:update ──
-    socket.on('location:update', (data) => {
-      if (!data?.teamId || data.lat == null || data.lng == null) return;
-      currentPositions.set(data.teamId, {
-        lat: data.lat,
-        lng: data.lng,
+    // ── admin:join ─────────────────────────────────────────────────────
+    socket.on('admin:join', async (data: AdminJoinPayload) => {
+      if (!data?.gameId || !data?.adminCode) return;
+      const game = await repo.getGame(data.gameId);
+      if (!game || game.adminCode !== data.adminCode) return;
+
+      socket.join(gameRoom(data.gameId));
+      socket.join(adminRoom(data.gameId));
+      socket.data.gameId  = data.gameId;
+      socket.data.isAdmin = true;
+
+      const teams = await repo.listTeams(data.gameId);
+      const teamSnapshots: TeamSnapshot[] = teams.map((t) => ({
+        id: t.id,
+        name: t.name,
+        color: t.color,
+        tokens: t.tokens,
+        activeChallengeId: t.activeChallengeId,
+      }));
+      const challenges = await repo.listActiveChallenges(data.gameId);
+      socket.emit('game:state', { game, teams: teamSnapshots, challenges });
+    });
+
+    // ── location:update ────────────────────────────────────────────────
+    socket.on('location:update', (data: LocationUpdatePayload) => {
+      if (!data?.deviceId || !data?.teamId) return;
+      if (typeof data.lat !== 'number' || typeof data.lng !== 'number') return;
+      devicePings.set(data.deviceId, {
+        teamId:    data.teamId,
+        gameId:    socket.data.gameId ?? '',
+        lat:       data.lat,
+        lng:       data.lng,
         updatedAt: new Date(),
       });
-      if (socket.data.gameId) {
-        locationBuffer.push({
-          teamId: data.teamId,
-          gameId: socket.data.gameId,
-          lat: data.lat,
-          lng: data.lng,
-        });
-      }
     });
 
-    // ── challenge:activate ──
-    socket.on('challenge:activate', async (data) => {
-      if (!data?.challengeId || !data?.teamId) return;
-      try {
-        // Verify the challenge is active
-        const challenge = await pool.query(
-          `SELECT id FROM challenges WHERE id = $1 AND status = 'active'`,
-          [data.challengeId],
-        );
-        if (challenge.rows.length === 0) {
-          socket.emit('complete:failed', { challengeId: data.challengeId, reason: 'not_active' as const });
-          return;
+    // ── challenge:accept ───────────────────────────────────────────────
+    socket.on(
+      'challenge:accept',
+      async (data: ChallengeActionPayload, ack: (r: ActionAck) => void) => {
+        const gameId = socket.data.gameId;
+        if (!gameId || !data?.challengeId || !data?.teamId) {
+          return ack({ ok: false, reason: 'bad_input' });
+        }
+        // Defensive: socket's team must match payload
+        if (socket.data.teamId && socket.data.teamId !== data.teamId) {
+          return ack({ ok: false, reason: 'not_authorized' });
         }
 
-        // Atomic: only set active_challenge_id if it's currently NULL
-        const result = await pool.query(
-          `UPDATE teams SET active_challenge_id = $1 WHERE id = $2 AND active_challenge_id IS NULL RETURNING id`,
-          [data.challengeId, data.teamId],
-        );
-        if (result.rows.length === 0) {
-          socket.emit('complete:failed', { challengeId: data.challengeId, reason: 'not_active' as const });
-          return;
-        }
-
-        // Broadcast activation to all clients in the game
-        if (socket.data.gameId) {
-          io.to(socket.data.gameId).emit('challenge:activated', {
-            challengeId: data.challengeId,
-            teamId: data.teamId,
-          });
-          logEvent(socket.data.gameId, 'challenge:activated', {
-            challengeId: data.challengeId,
-            teamId: data.teamId,
-          });
-        }
-      } catch (err) {
-        console.error('challenge:activate error:', err);
-      }
-    });
-
-    // ── challenge:abandon ──
-    socket.on('challenge:abandon', async (data) => {
-      if (!data?.challengeId || !data?.teamId) return;
-      try {
-        const result = await pool.query(
-          'UPDATE teams SET active_challenge_id = NULL WHERE id = $1 AND active_challenge_id = $2 RETURNING id',
-          [data.teamId, data.challengeId],
-        );
-        if (result.rows.length > 0 && socket.data.gameId) {
-          // Broadcast abandonment to all clients
-          io.to(socket.data.gameId).emit('challenge:abandoned', {
-            challengeId: data.challengeId,
-            teamId: data.teamId,
-          });
-          logEvent(socket.data.gameId, 'challenge:abandoned', {
-            challengeId: data.challengeId,
-            teamId: data.teamId,
-          });
-        }
-      } catch (err) {
-        console.error('challenge:abandon error:', err);
-      }
-    });
-
-    // ── challenge:complete ──
-    socket.on('challenge:complete', async (data) => {
-      if (!data?.challengeId || !data?.teamId) return;
-      const client = await pool.connect();
-      try {
-        await client.query('BEGIN');
-
-        // Verify the team has this challenge as their active challenge
-        const teamCheck = await client.query(
-          `SELECT active_challenge_id FROM teams WHERE id = $1`,
-          [data.teamId],
-        );
-        if (teamCheck.rows[0]?.active_challenge_id !== data.challengeId) {
-          await client.query('ROLLBACK');
-          socket.emit('complete:failed', { challengeId: data.challengeId, reason: 'not_active' as const });
-          return;
-        }
-
-        const result = await client.query(
-          `UPDATE challenges
-           SET status='claimed', claimed_by_team_id=$2, claimed_at=NOW()
-           WHERE id=$1 AND status='active'
-           RETURNING *`,
-          [data.challengeId, data.teamId],
-        );
-
-        if (result.rows.length === 0) {
-          await client.query('ROLLBACK');
-          socket.emit('complete:failed', { challengeId: data.challengeId, reason: 'already_claimed' });
-          return;
-        }
-
-        const challenge = result.rows[0];
-
-        // Award points and clear active challenge for the completing team
-        await client.query(
-          'UPDATE teams SET score = score + $1, active_challenge_id = NULL WHERE id = $2',
-          [challenge.points, data.teamId],
-        );
-
-        // Clear active_challenge_id for ALL other teams that had this challenge active
-        const yankedTeams = await client.query(
-          'UPDATE teams SET active_challenge_id = NULL WHERE active_challenge_id = $1 AND id != $2 RETURNING id',
-          [data.challengeId, data.teamId],
-        );
-
-        await client.query('COMMIT');
-
-        const teamResult = await pool.query('SELECT name FROM teams WHERE id=$1', [data.teamId]);
-        const teamName = teamResult.rows[0]?.name ?? 'Unknown';
-
-        socket.emit('complete:success', { challengeId: challenge.id, points: challenge.points });
-
-        if (socket.data.gameId) {
-          logEvent(socket.data.gameId, 'challenge:claimed', {
-            challengeId: challenge.id,
-            challengeName: challenge.name,
-            teamId: data.teamId,
-            teamName: teamName,
-            points: challenge.points,
-          });
-
-          io.to(socket.data.gameId).emit('challenge:claimed', {
-            challengeId: challenge.id,
-            claimedByTeamId: data.teamId,
-            claimedByTeamName: teamName,
-            points: challenge.points,
-          });
-
-          // Notify yanked teams
-          for (const yanked of yankedTeams.rows) {
-            // Find the socket for this team and emit yanked
-            const sockets = await io.in(socket.data.gameId).fetchSockets();
-            for (const s of sockets) {
-              if (s.data.teamId === yanked.id) {
-                s.emit('challenge:yanked', { challengeId: data.challengeId });
-              }
-            }
+        const team = await repo.acceptChallenge(data.teamId, data.challengeId);
+        if (!team) {
+          // Either team was busy or challenge was unavailable. Cheap way to
+          // disambiguate: read team's current state.
+          const current = await repo.getTeam(data.teamId);
+          if (current?.activeChallengeId) {
+            return ack({ ok: false, reason: 'team_busy' });
           }
-
-          // Send updated leaderboard to all clients in the game
-          const leaderboard = await getLeaderboard(socket.data.gameId);
-          io.to(socket.data.gameId).emit('leaderboard:update', leaderboard);
+          return ack({ ok: false, reason: 'challenge_unavailable' });
         }
-      } catch (err) {
-        await client.query('ROLLBACK').catch(() => {});
-        console.error('challenge:complete error:', err);
-      } finally {
-        client.release();
-      }
-    });
 
+        io.to(gameRoom(gameId)).emit('challenge:accepted', {
+          challengeId: data.challengeId,
+          teamId:      data.teamId,
+        });
+        repo.logEvent(gameId, 'challenge:accepted', {
+          challengeId: data.challengeId,
+          teamId:      data.teamId,
+        });
+        lifecycle.emitTeamState(io, data.teamId);
+        ack({ ok: true });
+      },
+    );
+
+    // ── challenge:wager ────────────────────────────────────────────────
+    socket.on(
+      'challenge:wager',
+      async (data: ChallengeWagerPayload, ack: (r: ActionAck) => void) => {
+        if (!data?.challengeId || !data?.teamId || typeof data.wagerAmount !== 'number') {
+          return ack({ ok: false, reason: 'bad_input' });
+        }
+        if (data.wagerAmount < 1) {
+          return ack({ ok: false, reason: 'bad_input' });
+        }
+
+        const team = await repo.setWager(data.teamId, data.challengeId, data.wagerAmount);
+        if (!team) return ack({ ok: false, reason: 'invalid_state' });
+
+        lifecycle.emitTeamState(io, data.teamId);
+        ack({ ok: true });
+      },
+    );
+
+    // ── challenge:complete ─────────────────────────────────────────────
+    socket.on(
+      'challenge:complete',
+      async (data: ChallengeCompletePayload, ack: (r: ActionAck) => void) => {
+        const gameId = socket.data.gameId;
+        if (!gameId || !data?.challengeId || !data?.teamId) {
+          return ack({ ok: false, reason: 'bad_input' });
+        }
+        const result = await lifecycle.completeAndBroadcast(
+          io,
+          gameId,
+          data.teamId,
+          data.challengeId,
+          data.count,
+        );
+        ack(result as ActionAck);
+      },
+    );
+
+    // ── challenge:fail (wager) ─────────────────────────────────────────
+    socket.on(
+      'challenge:fail',
+      async (data: ChallengeActionPayload, ack: (r: ActionAck) => void) => {
+        const gameId = socket.data.gameId;
+        if (!gameId || !data?.challengeId || !data?.teamId) {
+          return ack({ ok: false, reason: 'bad_input' });
+        }
+        const result = await lifecycle.failWagerAndBroadcast(
+          io,
+          gameId,
+          data.teamId,
+          data.challengeId,
+        );
+        ack(result as ActionAck);
+      },
+    );
+
+    // ── challenge:abandon ──────────────────────────────────────────────
+    socket.on(
+      'challenge:abandon',
+      async (data: ChallengeActionPayload, ack: (r: ActionAck) => void) => {
+        const gameId = socket.data.gameId;
+        if (!gameId || !data?.challengeId || !data?.teamId) {
+          return ack({ ok: false, reason: 'bad_input' });
+        }
+        const result = await lifecycle.abandonAndBroadcast(
+          io,
+          gameId,
+          data.teamId,
+          data.challengeId,
+        );
+        ack(result as ActionAck);
+      },
+    );
+
+    // ── disconnect ─────────────────────────────────────────────────────
     socket.on('disconnect', () => {
+      const deviceId = socket.data.deviceId;
+      if (deviceId) unregisterSocket(deviceId, socket);
       console.log('client disconnected:', socket.id);
     });
   });
 }
-
-export { currentPositions };
