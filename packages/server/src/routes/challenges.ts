@@ -2,198 +2,187 @@ import { Router } from 'express';
 import pool from '../db/pool.js';
 import { asyncHandler } from '../asyncHandler.js';
 import { MIN_PROXIMITY_METERS, MAX_PROXIMITY_METERS } from '@t4al/shared';
-import { getLeaderboard } from '../socket.js';
+import type { ChallengeType } from '@t4al/shared';
+import { requireAdmin, requireLobby } from './middleware.js';
+import { mapChallenge } from '../db/mappers.js';
 
 const router = Router({ mergeParams: true });
 
-// POST /api/games/:gameId/challenges — create a challenge (admin setup)
-router.post('/', asyncHandler(async (req, res) => {
-  const { name, description, points, lat, lng, proximityMeters = 100, sortOrder = 0 } = req.body;
-
-  if (!name || !description || points == null || lat == null || lng == null) {
-    res.status(400).json({ error: 'name, description, points, lat, and lng are required' });
-    return;
+// ── Type-field validation ──
+// Returns null if valid, else an error message.
+function validateChallengeFields(body: any): string | null {
+  const { type, tokens, tokensPerUnit, unitLabel } = body ?? {};
+  if (!['normal', 'variable', 'wager'].includes(type)) {
+    return 'type must be one of: normal, variable, wager';
   }
-
-  if (points < 0) {
-    res.status(400).json({ error: 'points must be non-negative' });
-    return;
-  }
-
-  if (proximityMeters < MIN_PROXIMITY_METERS || proximityMeters > MAX_PROXIMITY_METERS) {
-    res.status(400).json({ error: `proximityMeters must be between ${MIN_PROXIMITY_METERS} and ${MAX_PROXIMITY_METERS}` });
-    return;
-  }
-
-  // Auto-assign sortOrder if not provided: use max + 1
-  let order = sortOrder;
-  if (sortOrder === 0) {
-    const maxResult = await pool.query(
-      'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order FROM challenges WHERE game_id = $1',
-      [req.params.gameId],
-    );
-    order = maxResult.rows[0].next_order;
-  }
-
-  const result = await pool.query(
-    `INSERT INTO challenges (game_id, name, description, points, lat, lng, proximity_meters, sort_order)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     RETURNING *`,
-    [req.params.gameId, name, description, points, lat, lng, proximityMeters, order],
-  );
-
-  res.status(201).json(result.rows[0]);
-}));
-
-// GET /api/games/:gameId/challenges — list all challenges in a game
-router.get('/', asyncHandler(async (req, res) => {
-  const result = await pool.query(
-    'SELECT * FROM challenges WHERE game_id = $1 ORDER BY sort_order',
-    [req.params.gameId],
-  );
-
-  res.json(result.rows);
-}));
-
-// PUT /api/games/:gameId/challenges/reorder — bulk update sort_order
-// MUST be before /:id route so Express doesn't treat "reorder" as an :id
-router.put('/reorder', asyncHandler(async (req, res) => {
-  const { order } = req.body; // array of { id, sortOrder }
-
-  if (!Array.isArray(order)) {
-    res.status(400).json({ error: 'order must be an array of { id, sortOrder }' });
-    return;
-  }
-
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    for (const item of order) {
-      await client.query(
-        'UPDATE challenges SET sort_order = $1 WHERE id = $2 AND game_id = $3',
-        [item.sortOrder, item.id, req.params.gameId],
-      );
+  if (type === 'normal') {
+    if (typeof tokens !== 'number' || tokens < 0) return 'normal challenges require tokens >= 0';
+    if (tokensPerUnit != null || unitLabel != null) return 'normal challenges must not set tokensPerUnit or unitLabel';
+  } else if (type === 'variable') {
+    if (typeof tokensPerUnit !== 'number' || tokensPerUnit < 0) return 'variable challenges require tokensPerUnit >= 0';
+    if (typeof unitLabel !== 'string' || !unitLabel.trim()) return 'variable challenges require a unitLabel';
+    if (tokens != null) return 'variable challenges must not set tokens';
+  } else if (type === 'wager') {
+    if (tokens != null || tokensPerUnit != null || unitLabel != null) {
+      return 'wager challenges must not set tokens/tokensPerUnit/unitLabel';
     }
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
   }
+  return null;
+}
 
-  const result = await pool.query(
-    'SELECT * FROM challenges WHERE game_id = $1 ORDER BY sort_order',
-    [req.params.gameId],
-  );
-  res.json(result.rows);
-}));
-
-// PUT /api/challenges/:id — update a challenge (admin edits during setup)
-router.put('/:id', asyncHandler(async (req, res) => {
-  const { name, description, points, lat, lng, proximityMeters, sortOrder } = req.body;
-
-  const result = await pool.query(
-    `UPDATE challenges
-     SET name = COALESCE($2, name),
-         description = COALESCE($3, description),
-         points = COALESCE($4, points),
-         lat = COALESCE($5, lat),
-         lng = COALESCE($6, lng),
-         proximity_meters = COALESCE($7, proximity_meters),
-         sort_order = COALESCE($8, sort_order)
-     WHERE id = $1
-     RETURNING *`,
-    [req.params.id, name, description, points, lat, lng, proximityMeters, sortOrder],
-  );
-
-  if (result.rows.length === 0) {
-    res.status(404).json({ error: 'challenge not found' });
-    return;
-  }
-
-  res.json(result.rows[0]);
-}));
-
-// DELETE /api/challenges/:id — delete a challenge (admin)
-router.delete('/:id', asyncHandler(async (req, res) => {
-  const result = await pool.query(
-    'DELETE FROM challenges WHERE id = $1 RETURNING id',
-    [req.params.id],
-  );
-
-  if (result.rows.length === 0) {
-    res.status(404).json({ error: 'challenge not found' });
-    return;
-  }
-
-  res.json({ deleted: true });
-}));
-
-// POST /api/challenges/:id/claim — team completes a challenge, atomic claim
-router.post('/:id/claim', asyncHandler(async (req, res) => {
-  const { teamId } = req.body;
-  const client = await pool.connect();
-
-  try {
-    await client.query('BEGIN');
-
-    const result = await client.query(
-      `UPDATE challenges
-       SET status='claimed', claimed_by_team_id=$2, claimed_at=NOW()
-       WHERE id=$1 AND status='active'
-       RETURNING *`,
-      [req.params.id, teamId],
+// GET /api/games/:gameId/challenges — list all challenges (admin only)
+router.get('/',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const gameId = (req as any).resolvedGameId as string;
+    const result = await pool.query(
+      'SELECT * FROM challenges WHERE game_id = $1 ORDER BY sort_order',
+      [gameId],
     );
+    res.json(result.rows.map(mapChallenge));
+  }),
+);
 
-    if (result.rows.length === 0) {
-      await client.query('ROLLBACK');
-      res.status(400).json({ error: 'challenge not found or already claimed' });
+// POST /api/games/:gameId/challenges — create (lobby only)
+router.post('/',
+  requireAdmin,
+  requireLobby,
+  asyncHandler(async (req, res) => {
+    const gameId = (req as any).resolvedGameId as string;
+    const { name, description, lat, lng, proximityMeters = 100, sortOrder } = req.body ?? {};
+    const typeErr = validateChallengeFields(req.body);
+    if (typeErr) { res.status(400).json({ error: typeErr }); return; }
+
+    if (!name || !description || lat == null || lng == null) {
+      res.status(400).json({ error: 'name, description, lat, lng required' });
+      return;
+    }
+    if (proximityMeters < MIN_PROXIMITY_METERS || proximityMeters > MAX_PROXIMITY_METERS) {
+      res.status(400).json({ error: `proximityMeters must be in [${MIN_PROXIMITY_METERS}, ${MAX_PROXIMITY_METERS}]` });
       return;
     }
 
-    const challenge = result.rows[0];
-    await client.query(
-      'UPDATE teams SET score = score + $1, active_challenge_id = NULL WHERE id = $2',
-      [challenge.points, teamId],
-    );
-
-    await client.query('COMMIT');
-
-    // Log event — fetch team name for readable event log
-    const teamResult = await pool.query('SELECT name FROM teams WHERE id = $1', [teamId]);
-    const teamName = teamResult.rows[0]?.name ?? 'Unknown';
-    await pool.query(
-      `INSERT INTO game_events (game_id, type, payload) VALUES ($1, 'challenge:claimed', $2)`,
-      [challenge.game_id, JSON.stringify({
-        challengeId: challenge.id,
-        challengeName: challenge.name,
-        teamId,
-        teamName,
-        points: challenge.points,
-      })],
-    ).catch((err: any) => console.error('Failed to log claim event:', err));
-
-    // Emit socket events so all connected clients update
-    const io = req.app.get('io');
-    if (io && challenge.game_id) {
-      io.to(challenge.game_id).emit('challenge:claimed', {
-        challengeId: challenge.id,
-        claimedByTeamId: teamId,
-        claimedByTeamName: '',
-        points: challenge.points,
-      });
-      const leaderboard = await getLeaderboard(challenge.game_id);
-      io.to(challenge.game_id).emit('leaderboard:update', leaderboard);
+    let order = sortOrder;
+    if (order == null) {
+      const maxR = await pool.query(
+        'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM challenges WHERE game_id = $1',
+        [gameId],
+      );
+      order = maxR.rows[0].next;
     }
 
-    res.json(challenge);
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-}));
+    const type: ChallengeType = req.body.type;
+    const tokens          = type === 'normal'   ? req.body.tokens        : null;
+    const tokensPerUnit   = type === 'variable' ? req.body.tokensPerUnit : null;
+    const unitLabel       = type === 'variable' ? req.body.unitLabel     : null;
+
+    const result = await pool.query(
+      `INSERT INTO challenges (
+         game_id, name, description, type, tokens, tokens_per_unit, unit_label,
+         lat, lng, proximity_meters, sort_order
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING *`,
+      [gameId, name, description, type, tokens, tokensPerUnit, unitLabel,
+       lat, lng, proximityMeters, order],
+    );
+    res.status(201).json(mapChallenge(result.rows[0]));
+  }),
+);
+
+// PUT /api/games/:gameId/challenges/order — bulk reorder (lobby only)
+router.put('/order',
+  requireAdmin,
+  requireLobby,
+  asyncHandler(async (req, res) => {
+    const gameId = (req as any).resolvedGameId as string;
+    const { order } = req.body ?? {};
+    if (!Array.isArray(order)) {
+      res.status(400).json({ error: 'order must be an array of { id, sortOrder }' });
+      return;
+    }
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const item of order) {
+        await client.query(
+          'UPDATE challenges SET sort_order = $1 WHERE id = $2 AND game_id = $3',
+          [item.sortOrder, item.id, gameId],
+        );
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+    const result = await pool.query(
+      'SELECT * FROM challenges WHERE game_id = $1 ORDER BY sort_order',
+      [gameId],
+    );
+    res.json(result.rows.map(mapChallenge));
+  }),
+);
+
+// PUT /api/challenges/:challengeId — update (lobby only)
+router.put('/:challengeId',
+  requireAdmin,
+  requireLobby,
+  asyncHandler(async (req, res) => {
+    const challengeIdParam = req.params.challengeId;
+    const challengeId = Array.isArray(challengeIdParam) ? challengeIdParam[0] : challengeIdParam;
+    const { name, description, type, tokens, tokensPerUnit, unitLabel,
+            lat, lng, proximityMeters, sortOrder } = req.body ?? {};
+
+    // If the caller is changing type or token fields, re-validate the shape
+    if (type != null) {
+      const typeErr = validateChallengeFields({ type, tokens, tokensPerUnit, unitLabel });
+      if (typeErr) { res.status(400).json({ error: typeErr }); return; }
+    }
+
+    const result = await pool.query(
+      `UPDATE challenges SET
+         name             = COALESCE($2, name),
+         description      = COALESCE($3, description),
+         type             = COALESCE($4, type),
+         tokens           = CASE WHEN $4 IS NOT NULL THEN $5 ELSE tokens           END,
+         tokens_per_unit  = CASE WHEN $4 IS NOT NULL THEN $6 ELSE tokens_per_unit  END,
+         unit_label       = CASE WHEN $4 IS NOT NULL THEN $7 ELSE unit_label       END,
+         lat              = COALESCE($8,  lat),
+         lng              = COALESCE($9,  lng),
+         proximity_meters = COALESCE($10, proximity_meters),
+         sort_order       = COALESCE($11, sort_order)
+       WHERE id = $1
+       RETURNING *`,
+      [challengeId, name, description, type, tokens, tokensPerUnit, unitLabel,
+       lat, lng, proximityMeters, sortOrder],
+    );
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'challenge not found' });
+      return;
+    }
+    res.json(mapChallenge(result.rows[0]));
+  }),
+);
+
+// DELETE /api/challenges/:challengeId — delete (lobby only)
+router.delete('/:challengeId',
+  requireAdmin,
+  requireLobby,
+  asyncHandler(async (req, res) => {
+    const challengeIdParam = req.params.challengeId;
+    const challengeId = Array.isArray(challengeIdParam) ? challengeIdParam[0] : challengeIdParam;
+    const result = await pool.query(
+      'DELETE FROM challenges WHERE id = $1 RETURNING id',
+      [challengeId],
+    );
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'challenge not found' });
+      return;
+    }
+    res.json({ deleted: true });
+  }),
+);
 
 export default router;
