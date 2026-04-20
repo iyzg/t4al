@@ -4,116 +4,111 @@ import type {
   Game,
   GameStatus,
   LeaderboardEntry,
+  TeamPrivateState,
   TeamSnapshot,
 } from '@t4al/shared';
 
 export interface GameStore {
   // Identity
-  gameId: string | null;
-  teamId: string | null;
-  teamColor: string | null;
-  gameStatus: GameStatus | null;
-  game: Game | null;
+  gameId:     string | null;
+  teamId:     string | null;
+  teamColor:  string | null;
+  deviceId:   string | null;
+  adminCode:  string | null;    // set when viewing admin UI
+  isAdmin:    boolean;
 
-  // Challenges keyed by id for fast lookup + update
+  // Game snapshot
+  game:         Game | null;
+  gameStatus:   GameStatus | null;
+  finalStandings: LeaderboardEntry[] | null;
+
+  // Challenges keyed by id for fast update
   challenges: Record<string, Challenge>;
 
-  // Leaderboard
+  // Leaderboard (sorted)
   leaderboard: LeaderboardEntry[];
 
-  // Team snapshots (for pie chart — who's working on what)
+  // Public team state (for map pie-chart, admin list, etc.)
   teamSnapshots: TeamSnapshot[];
 
-  // Active challenge (this team's)
+  // Private team state (for the current client's team only)
+  tokens:            number;
   activeChallengeId: string | null;
+  wagerAmount:       number | null;
 
-  // Actions
-  challengeSpawned: (challenge: Challenge) => void;
-  challengeClaimed: (challengeId: string, claimedByTeamId: string) => void;
-  challengeExpired: (challengeId: string) => void;
-  challengeActivatedByTeam: (challengeId: string, teamId: string) => void;
-  challengeAbandonedByTeam: (challengeId: string, teamId: string) => void;
-  challengeYanked: (challengeId: string) => void;
-  leaderboardUpdated: (teams: LeaderboardEntry[]) => void;
-  setActiveChallengeId: (id: string | null) => void;
-  setGameStatus: (status: GameStatus) => void;
-  setIdentity: (gameId: string, teamId: string, teamColor: string) => void;
-  setGameState: (game: Game, teams: TeamSnapshot[], challenges: Challenge[]) => void;
+  // Device-local GPS (from navigator.geolocation)
+  myLocation: { lat: number; lng: number } | null;
+
+  // Ephemeral UI state
+  toast:         { message: string; kind: 'error' | 'info' } | null;
+  acceptedLocally: Set<string>;  // challengeIds we've accepted since last map reset
+                                  // (used so description stays revealed after walking out of range)
+
+  // ── Setters / reducers ──
+  setIdentity:    (args: { gameId: string; teamId: string; teamColor: string; deviceId: string }) => void;
+  clearIdentity:  () => void;
+  setAdminCode:   (code: string | null) => void;
+  setGameState:   (game: Game, teams: TeamSnapshot[], challenges: Challenge[]) => void;
+  setTeamPrivateState: (state: TeamPrivateState) => void;
+  setMyLocation:  (loc: { lat: number; lng: number } | null) => void;
+  setGameStatus:  (status: GameStatus) => void;
+
+  challengeSpawned:      (challenge: Challenge) => void;
+  challengeClaimed:      (challengeId: string, teamId: string, tokensAwarded: number) => void;
+  challengeExpired:      (challengeId: string) => void;
+  challengeAcceptedBy:   (challengeId: string, teamId: string) => void;
+  challengeAbandonedBy:  (challengeId: string, teamId: string) => void;
+  challengeWagerFailedBy:(challengeId: string, teamId: string) => void;
+  leaderboardUpdated:    (teams: LeaderboardEntry[]) => void;
+  gameStarted:           (game: Game, challenges: Challenge[]) => void;
+  gameEnded:             (finalStandings: LeaderboardEntry[]) => void;
+
+  markAcceptedLocally:   (challengeId: string) => void;
+  clearAcceptedLocally:  (challengeId: string) => void;
+
+  showToast:             (message: string, kind?: 'error' | 'info') => void;
+  dismissToast:          () => void;
 }
 
 export const useGameStore = create<GameStore>()((set, get) => ({
   gameId: null,
   teamId: null,
   teamColor: null,
-  gameStatus: null,
+  deviceId: null,
+  adminCode: null,
+  isAdmin: false,
+
   game: null,
+  gameStatus: null,
+  finalStandings: null,
+
   challenges: {},
   leaderboard: [],
   teamSnapshots: [],
+
+  tokens: 0,
   activeChallengeId: null,
+  wagerAmount: null,
 
-  challengeSpawned: (challenge) => set((state) => ({
-    challenges: { ...state.challenges, [challenge.id]: challenge }
-  })),
+  myLocation: null,
 
-  challengeClaimed: (challengeId, claimedByTeamId) => set((state) => {
-    // Remove the challenge from map (it's done)
-    const { [challengeId]: _, ...rest } = state.challenges;
-    // Clear activeChallengeId for any team that had it
-    const teamSnapshots = state.teamSnapshots.map((t) =>
-      t.activeChallengeId === challengeId ? { ...t, activeChallengeId: null } : t
-    );
-    return {
-      challenges: rest,
-      teamSnapshots,
-      activeChallengeId: challengeId === state.activeChallengeId ? null : state.activeChallengeId,
-    };
-  }),
+  toast: null,
+  acceptedLocally: new Set(),
 
-  challengeExpired: (challengeId) => set((state) => {
-    // Remove the challenge from map
-    const { [challengeId]: _, ...rest } = state.challenges;
-    // Clear activeChallengeId for any team that had it
-    const teamSnapshots = state.teamSnapshots.map((t) =>
-      t.activeChallengeId === challengeId ? { ...t, activeChallengeId: null } : t
-    );
-    return {
-      challenges: rest,
-      teamSnapshots,
-    };
-  }),
+  setIdentity: ({ gameId, teamId, teamColor, deviceId }) =>
+    set({ gameId, teamId, teamColor, deviceId, isAdmin: false }),
 
-  challengeActivatedByTeam: (challengeId, teamId) => set((state) => ({
-    teamSnapshots: state.teamSnapshots.map((t) =>
-      t.id === teamId ? { ...t, activeChallengeId: challengeId } : t
-    ),
-    // If it's our team, set our activeChallengeId
-    activeChallengeId: teamId === state.teamId ? challengeId : state.activeChallengeId,
-  })),
+  clearIdentity: () =>
+    set({
+      gameId: null, teamId: null, teamColor: null, deviceId: null,
+      adminCode: null, isAdmin: false,
+      game: null, gameStatus: null, finalStandings: null,
+      challenges: {}, leaderboard: [], teamSnapshots: [],
+      tokens: 0, activeChallengeId: null, wagerAmount: null,
+      acceptedLocally: new Set(),
+    }),
 
-  challengeAbandonedByTeam: (challengeId, teamId) => set((state) => ({
-    teamSnapshots: state.teamSnapshots.map((t) =>
-      t.id === teamId && t.activeChallengeId === challengeId
-        ? { ...t, activeChallengeId: null }
-        : t
-    ),
-    activeChallengeId:
-      teamId === state.teamId && state.activeChallengeId === challengeId
-        ? null
-        : state.activeChallengeId,
-  })),
-
-  challengeYanked: (challengeId) => set((state) => ({
-    activeChallengeId: state.activeChallengeId === challengeId ? null : state.activeChallengeId,
-  })),
-
-  leaderboardUpdated: (teams) => set(() => ({
-    leaderboard: teams,
-  })),
-
-  setActiveChallengeId: (id) => set(() => ({ activeChallengeId: id })),
-  setGameStatus: (status) => set(() => ({ gameStatus: status })),
-  setIdentity: (gameId, teamId, teamColor) => set(() => ({ gameId, teamId, teamColor })),
+  setAdminCode: (code) => set({ adminCode: code, isAdmin: code != null }),
 
   setGameState: (game, teams, challenges) => {
     const myTeam = teams.find((t) => t.id === get().teamId);
@@ -122,10 +117,129 @@ export const useGameStore = create<GameStore>()((set, get) => ({
       gameStatus: game.status,
       teamSnapshots: teams,
       challenges: Object.fromEntries(challenges.map((c) => [c.id, c])),
-      leaderboard: teams.map((t, i) => ({
-        id: t.id, name: t.name, color: t.color, score: t.score, rank: i + 1,
-      })),
-      activeChallengeId: myTeam?.activeChallengeId ?? null,
+      leaderboard: [...teams]
+        .sort((a, b) => b.tokens - a.tokens || a.name.localeCompare(b.name))
+        .map((t, i) => ({ id: t.id, name: t.name, color: t.color, tokens: t.tokens, rank: i + 1 })),
+      activeChallengeId: myTeam?.activeChallengeId ?? get().activeChallengeId,
+      tokens: myTeam?.tokens ?? get().tokens,
     });
   },
+
+  setTeamPrivateState: (state) => set({
+    activeChallengeId: state.activeChallengeId,
+    wagerAmount:       state.wagerAmount,
+    tokens:            state.tokens,
+  }),
+
+  setMyLocation: (loc) => set({ myLocation: loc }),
+  setGameStatus: (status) => set({ gameStatus: status }),
+
+  challengeSpawned: (challenge) =>
+    set((s) => ({ challenges: { ...s.challenges, [challenge.id]: challenge } })),
+
+  challengeClaimed: (challengeId, teamId, tokensAwarded) =>
+    set((s) => {
+      const { [challengeId]: _removed, ...rest } = s.challenges;
+      const teamSnapshots = s.teamSnapshots.map((t) => {
+        if (t.activeChallengeId === challengeId) {
+          return {
+            ...t,
+            activeChallengeId: null,
+            tokens: t.id === teamId ? t.tokens + tokensAwarded : t.tokens,
+          };
+        }
+        if (t.id === teamId) return { ...t, tokens: t.tokens + tokensAwarded };
+        return t;
+      });
+      const acceptedLocally = new Set(s.acceptedLocally);
+      acceptedLocally.delete(challengeId);
+      return {
+        challenges: rest,
+        teamSnapshots,
+        acceptedLocally,
+      };
+    }),
+
+  challengeExpired: (challengeId) =>
+    set((s) => {
+      const { [challengeId]: _removed, ...rest } = s.challenges;
+      const teamSnapshots = s.teamSnapshots.map((t) =>
+        t.activeChallengeId === challengeId ? { ...t, activeChallengeId: null } : t,
+      );
+      const acceptedLocally = new Set(s.acceptedLocally);
+      acceptedLocally.delete(challengeId);
+      return { challenges: rest, teamSnapshots, acceptedLocally };
+    }),
+
+  challengeAcceptedBy: (challengeId, teamId) =>
+    set((s) => ({
+      teamSnapshots: s.teamSnapshots.map((t) =>
+        t.id === teamId ? { ...t, activeChallengeId: challengeId } : t,
+      ),
+    })),
+
+  challengeAbandonedBy: (challengeId, teamId) =>
+    set((s) => ({
+      teamSnapshots: s.teamSnapshots.map((t) =>
+        t.id === teamId && t.activeChallengeId === challengeId
+          ? { ...t, activeChallengeId: null }
+          : t,
+      ),
+    })),
+
+  challengeWagerFailedBy: (challengeId, teamId) =>
+    set((s) => ({
+      teamSnapshots: s.teamSnapshots.map((t) =>
+        t.id === teamId && t.activeChallengeId === challengeId
+          ? { ...t, activeChallengeId: null }
+          : t,
+      ),
+    })),
+
+  leaderboardUpdated: (teams) =>
+    set((s) => ({
+      leaderboard: teams,
+      teamSnapshots: s.teamSnapshots.map((t) => {
+        const entry = teams.find((x) => x.id === t.id);
+        return entry ? { ...t, tokens: entry.tokens } : t;
+      }),
+    })),
+
+  gameStarted: (game, challenges) =>
+    set({
+      game,
+      gameStatus: 'active',
+      challenges: Object.fromEntries(challenges.map((c) => [c.id, c])),
+    }),
+
+  gameEnded: (finalStandings) =>
+    set({ gameStatus: 'ended', finalStandings, leaderboard: finalStandings }),
+
+  markAcceptedLocally: (challengeId) =>
+    set((s) => {
+      const next = new Set(s.acceptedLocally);
+      next.add(challengeId);
+      return { acceptedLocally: next };
+    }),
+
+  clearAcceptedLocally: (challengeId) =>
+    set((s) => {
+      const next = new Set(s.acceptedLocally);
+      next.delete(challengeId);
+      return { acceptedLocally: next };
+    }),
+
+  showToast: (message, kind = 'error') => set({ toast: { message, kind } }),
+  dismissToast: () => set({ toast: null }),
 }));
+
+// Generate or retrieve a persistent deviceId from localStorage.
+// Called on first load; the result is stored in localStorage and survives reloads.
+export function getOrCreateDeviceId(): string {
+  const KEY = 'deviceId';
+  const existing = localStorage.getItem(KEY);
+  if (existing) return existing;
+  const fresh = crypto.randomUUID();
+  localStorage.setItem(KEY, fresh);
+  return fresh;
+}
