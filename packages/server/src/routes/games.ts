@@ -186,7 +186,8 @@ router.get('/:id/events',
   asyncHandler(async (req, res) => {
     const gameId = (req as any).resolvedGameId as string;
     const result = await pool.query(
-      'SELECT id, game_id, type, payload, created_at FROM game_events WHERE game_id = $1 ORDER BY created_at DESC LIMIT 500',
+      `SELECT id, game_id AS "gameId", type, payload, created_at AS "createdAt"
+       FROM game_events WHERE game_id = $1 ORDER BY created_at DESC LIMIT 500`,
       [gameId],
     );
     res.json(result.rows);
