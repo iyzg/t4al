@@ -242,27 +242,26 @@ export default function GamePage() {
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
 
       <GameHUD />
-      <Leaderboard />
       <Toast />
 
-      {/* Tokens badge */}
-      {gameStatus === 'active' && (
-        <div style={{
-          position: 'absolute', top: 8, right: 16, background: 'rgba(26,26,46,0.9)',
-          color: 'white', borderRadius: 8, padding: '8px 14px', zIndex: 5,
-          fontWeight: 'bold',
-        }}>
-          {tokens} 🪙
-        </div>
-      )}
-
-      {gameStatus !== 'active' && gameStatus !== 'ended' && Object.keys(challenges).length === 0 && (
-        <div style={{
-          position: 'absolute', bottom: 80, left: 0, right: 0,
-          textAlign: 'center', color: 'white', opacity: 0.6, fontSize: 16,
-        }}>
-          Waiting for game to start...
-        </div>
+      {/* Lobby overlay — hides leaderboard + tokens; shows team-color stack + "Game starting soon!" banner */}
+      {gameStatus === 'lobby' ? (
+        <LobbyOverlay teams={teamSnapshots} myTeamId={teamId} />
+      ) : (
+        <>
+          <Leaderboard />
+          {gameStatus === 'active' && (
+            <div style={{
+              position: 'absolute', top: 16, right: 16,
+              background: '#0b0f1a', color: 'white',
+              borderRadius: 999, padding: '6px 14px',
+              fontWeight: 700, fontSize: 15,
+              zIndex: 5, boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+            }}>
+              {tokens} 🪙
+            </div>
+          )}
+        </>
       )}
 
       {selectedChallenge && (
@@ -542,6 +541,78 @@ function WagerSetup({
         </>
       )}
     </div>
+  );
+}
+
+// ── Lobby overlay ──
+// Shown while game.status === 'lobby'. Mirrors the mockup:
+//   - A compact vertical stack of team colors on the left (the current player's
+//     team gets a distinct "pill" treatment at the top of the stack).
+//   - A large rounded white banner at the bottom saying "Game starting soon! :)"
+function LobbyOverlay({ teams, myTeamId }: { teams: TeamSnapshot[]; myTeamId: string | null }) {
+  const myTeam    = teams.find((t) => t.id === myTeamId);
+  const otherTeams = teams.filter((t) => t.id !== myTeamId);
+
+  return (
+    <>
+      {/* Team stack, anchored below the time pill (which is at top:16 left:16, roughly 34px tall) */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 68, left: 20,
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          gap: 6, zIndex: 4,
+        }}
+      >
+        {/* User's team indicator — circle with dot, matches the mockup */}
+        {myTeam && (
+          <div
+            style={{
+              width: 22, height: 22, borderRadius: '50%',
+              background: '#0b0f1a',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 2px 6px rgba(0,0,0,.35)',
+            }}
+            title={`${myTeam.name} (you)`}
+          >
+            <span style={{
+              width: 8, height: 8, borderRadius: '50%', background: myTeam.color,
+            }} />
+          </div>
+        )}
+        {/* Other teams — tight vertical colored bars */}
+        {otherTeams.map((t) => (
+          <span
+            key={t.id}
+            title={t.name}
+            style={{
+              width: 5, height: 22, borderRadius: 3, background: t.color,
+              boxShadow: '0 1px 3px rgba(0,0,0,.35)',
+            }}
+          />
+        ))}
+      </div>
+
+      {/* Bottom banner */}
+      <div
+        style={{
+          position: 'absolute',
+          left: 16, right: 16, bottom: 32,
+          background: '#ffffff',
+          color: '#0b0f1a',
+          borderRadius: 18,
+          padding: '22px 24px',
+          textAlign: 'center',
+          fontWeight: 700,
+          fontSize: 20,
+          letterSpacing: '-0.01em',
+          boxShadow: '0 8px 28px rgba(0,0,0,.35)',
+          zIndex: 5,
+        }}
+      >
+        Game starting soon! :)
+      </div>
+    </>
   );
 }
 
