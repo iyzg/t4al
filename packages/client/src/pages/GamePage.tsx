@@ -244,23 +244,24 @@ export default function GamePage() {
       <GameHUD />
       <Toast />
 
-      {/* Lobby overlay — hides leaderboard + tokens; shows team-color stack + "Game starting soon!" banner */}
-      {gameStatus === 'lobby' ? (
-        <LobbyOverlay teams={teamSnapshots} myTeamId={teamId} />
-      ) : (
+      {/* Team-color stack is the compact "leaderboard" — stays the same in
+          lobby and active states. */}
+      <TeamStack teams={teamSnapshots} />
+
+      {gameStatus === 'lobby' && <LobbyBanner />}
+
+      {gameStatus === 'active' && (
         <>
           <Leaderboard />
-          {gameStatus === 'active' && (
-            <div style={{
-              position: 'absolute', top: 16, right: 16,
-              background: '#0b0f1a', color: 'white',
-              borderRadius: 999, padding: '6px 14px',
-              fontWeight: 700, fontSize: 15,
-              zIndex: 5, boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
-            }}>
-              {tokens} 🪙
-            </div>
-          )}
+          <div style={{
+            position: 'absolute', top: 16, right: 16,
+            background: '#0b0f1a', color: 'white',
+            borderRadius: 999, padding: '6px 14px',
+            fontWeight: 700, fontSize: 15,
+            zIndex: 5, boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+          }}>
+            {tokens} 🪙
+          </div>
         </>
       )}
 
@@ -549,62 +550,64 @@ function WagerSetup({
 //   - A compact vertical stack of team colors on the left (the current player's
 //     team gets a distinct "pill" treatment at the top of the stack).
 //   - A large rounded white banner at the bottom saying "Game starting soon! :)"
-function LobbyOverlay({ teams, myTeamId: _myTeamId }: { teams: TeamSnapshot[]; myTeamId: string | null }) {
-  const R = 4; // rounded-corner radius for the outermost edges of the stack
-
+// Segmented vertical stack of all teams (including yours). Only the very
+// top and very bottom outer corners are rounded; internal edges are flat.
+// Used in both lobby and active states.
+function TeamStack({ teams }: { teams: TeamSnapshot[] }) {
+  const R = 4;
   return (
-    <>
-      {/* Segmented vertical stack of all teams (including yours). Only the very
-          top and very bottom outer corners are rounded; internal edges are flat. */}
-      <div
-        style={{
-          position: 'absolute',
-          top: 68, left: 22,
-          display: 'flex', flexDirection: 'column', alignItems: 'center',
-          gap: 2, zIndex: 4,
-        }}
-      >
-        {teams.map((t, i) => {
-          const isFirst = i === 0;
-          const isLast  = i === teams.length - 1;
-          return (
-            <span
-              key={t.id}
-              title={t.name}
-              style={{
-                width: 8, height: 22,
-                background: t.color,
-                borderTopLeftRadius:     isFirst ? R : 0,
-                borderTopRightRadius:    isFirst ? R : 0,
-                borderBottomLeftRadius:  isLast  ? R : 0,
-                borderBottomRightRadius: isLast  ? R : 0,
-                boxShadow: '0 1px 3px rgba(0,0,0,.35)',
-              }}
-            />
-          );
-        })}
-      </div>
+    <div
+      style={{
+        position: 'absolute',
+        top: 68, left: 22,
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        gap: 2, zIndex: 4,
+      }}
+    >
+      {teams.map((t, i) => {
+        const isFirst = i === 0;
+        const isLast  = i === teams.length - 1;
+        return (
+          <span
+            key={t.id}
+            title={t.name}
+            style={{
+              width: 8, height: 22,
+              background: t.color,
+              borderTopLeftRadius:     isFirst ? R : 0,
+              borderTopRightRadius:    isFirst ? R : 0,
+              borderBottomLeftRadius:  isLast  ? R : 0,
+              borderBottomRightRadius: isLast  ? R : 0,
+              boxShadow: '0 1px 3px rgba(0,0,0,.35)',
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
 
-      {/* Bottom banner */}
-      <div
-        style={{
-          position: 'absolute',
-          left: 16, right: 16, bottom: 32,
-          background: '#ffffff',
-          color: '#0b0f1a',
-          borderRadius: 18,
-          padding: '22px 24px',
-          textAlign: 'center',
-          fontWeight: 700,
-          fontSize: 20,
-          letterSpacing: '-0.01em',
-          boxShadow: '0 8px 28px rgba(0,0,0,.35)',
-          zIndex: 5,
-        }}
-      >
-        Game starting soon! :)
-      </div>
-    </>
+// Bottom-of-screen banner shown during lobby.
+function LobbyBanner() {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: 16, right: 16, bottom: 32,
+        background: '#ffffff',
+        color: '#0b0f1a',
+        borderRadius: 18,
+        padding: '22px 24px',
+        textAlign: 'center',
+        fontWeight: 700,
+        fontSize: 20,
+        letterSpacing: '-0.01em',
+        boxShadow: '0 8px 28px rgba(0,0,0,.35)',
+        zIndex: 5,
+      }}
+    >
+      Game starting soon! :)
+    </div>
   );
 }
 
