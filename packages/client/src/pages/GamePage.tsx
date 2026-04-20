@@ -549,48 +549,40 @@ function WagerSetup({
 //   - A compact vertical stack of team colors on the left (the current player's
 //     team gets a distinct "pill" treatment at the top of the stack).
 //   - A large rounded white banner at the bottom saying "Game starting soon! :)"
-function LobbyOverlay({ teams, myTeamId }: { teams: TeamSnapshot[]; myTeamId: string | null }) {
-  const myTeam    = teams.find((t) => t.id === myTeamId);
-  const otherTeams = teams.filter((t) => t.id !== myTeamId);
+function LobbyOverlay({ teams, myTeamId: _myTeamId }: { teams: TeamSnapshot[]; myTeamId: string | null }) {
+  const R = 4; // rounded-corner radius for the outermost edges of the stack
 
   return (
     <>
-      {/* Team stack, anchored below the time pill (which is at top:16 left:16, roughly 34px tall) */}
+      {/* Segmented vertical stack of all teams (including yours). Only the very
+          top and very bottom outer corners are rounded; internal edges are flat. */}
       <div
         style={{
           position: 'absolute',
-          top: 68, left: 20,
+          top: 68, left: 22,
           display: 'flex', flexDirection: 'column', alignItems: 'center',
-          gap: 6, zIndex: 4,
+          gap: 2, zIndex: 4,
         }}
       >
-        {/* User's team indicator — circle with dot, matches the mockup */}
-        {myTeam && (
-          <div
-            style={{
-              width: 22, height: 22, borderRadius: '50%',
-              background: '#0b0f1a',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 2px 6px rgba(0,0,0,.35)',
-            }}
-            title={`${myTeam.name} (you)`}
-          >
-            <span style={{
-              width: 8, height: 8, borderRadius: '50%', background: myTeam.color,
-            }} />
-          </div>
-        )}
-        {/* Other teams — tight vertical colored bars */}
-        {otherTeams.map((t) => (
-          <span
-            key={t.id}
-            title={t.name}
-            style={{
-              width: 5, height: 22, borderRadius: 3, background: t.color,
-              boxShadow: '0 1px 3px rgba(0,0,0,.35)',
-            }}
-          />
-        ))}
+        {teams.map((t, i) => {
+          const isFirst = i === 0;
+          const isLast  = i === teams.length - 1;
+          return (
+            <span
+              key={t.id}
+              title={t.name}
+              style={{
+                width: 8, height: 22,
+                background: t.color,
+                borderTopLeftRadius:     isFirst ? R : 0,
+                borderTopRightRadius:    isFirst ? R : 0,
+                borderBottomLeftRadius:  isLast  ? R : 0,
+                borderBottomRightRadius: isLast  ? R : 0,
+                boxShadow: '0 1px 3px rgba(0,0,0,.35)',
+              }}
+            />
+          );
+        })}
       </div>
 
       {/* Bottom banner */}
