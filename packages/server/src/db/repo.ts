@@ -290,21 +290,23 @@ export async function completeChallenge(
   | { raceLost: true }
   | null
 > {
+  // Defensive read outside any transaction: no lock, just a TOCTOU-tolerant check.
+  // The challenge-row atomic claim below is the actual serialization point; taking
+  // `FOR UPDATE` on the team row here would deadlock with concurrent yanks targeting
+  // the same team rows from other teams' completeChallenge transactions.
+  const teamPre = await pool.query(
+    'SELECT active_challenge_id, wager_amount FROM teams WHERE id = $1',
+    [teamId],
+  );
+  if (teamPre.rows[0]?.active_challenge_id !== challengeId) return null;
+  const wagerAtRead: number | null = teamPre.rows[0].wager_amount;
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    // Verify team's active challenge matches before attempting claim (defensive)
-    const teamRow = await client.query(
-      'SELECT active_challenge_id, wager_amount, tokens FROM teams WHERE id = $1 FOR UPDATE',
-      [teamId],
-    );
-    if (teamRow.rows[0]?.active_challenge_id !== challengeId) {
-      await client.query('ROLLBACK');
-      return null;
-    }
-
-    // Atomic claim
+    // Atomic claim — locks the challenge row exclusively until COMMIT,
+    // serializing all concurrent claim attempts.
     const claimR = await client.query(
       `UPDATE challenges
        SET status = 'claimed', claimed_by_team_id = $1, claimed_at = NOW()
@@ -329,12 +331,11 @@ export async function completeChallenge(
       }
       tokensAwarded = (ch.tokensPerUnit ?? 0) * count;
     } else if (ch.type === 'wager') {
-      const wager = teamRow.rows[0].wager_amount;
-      if (wager == null) {
+      if (wagerAtRead == null) {
         await client.query('ROLLBACK');
         return null;
       }
-      tokensAwarded = 2 * wager;
+      tokensAwarded = 2 * wagerAtRead;
     }
 
     // Award tokens to claiming team, clear its state
