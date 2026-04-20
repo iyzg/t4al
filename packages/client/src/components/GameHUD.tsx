@@ -41,9 +41,6 @@ export default function GameHUD() {
   return (
     <div
       style={{
-        position: 'absolute',
-        top: 16,
-        left: 16,
         background: '#0b0f1a',
         color: 'white',
         borderRadius: 999,
@@ -53,7 +50,6 @@ export default function GameHUD() {
         letterSpacing: '0.02em',
         fontVariantNumeric: 'tabular-nums',
         opacity: dimmed ? 0.75 : 1,
-        zIndex: 5,
         boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
       }}
     >

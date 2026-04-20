@@ -13,7 +13,7 @@ import {
   emitFail,
   emitAbandon,
 } from '../socketHandlers';
-import { LOCATION_PING_INTERVAL_MS } from '@t4al/shared';
+import { LOCATION_PING_INTERVAL_MS, CHALLENGE_COLOR } from '@t4al/shared';
 import type { Challenge, TeamSnapshot } from '@t4al/shared';
 import GameHUD from '../components/GameHUD';
 import Toast from '../components/Toast';
@@ -240,17 +240,22 @@ export default function GamePage() {
     <div style={{ position: 'relative', width: '100%', height: '100vh' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
 
-      <GameHUD />
       <Toast />
 
-      {/* My rank + token pill, directly under the clock — active state only */}
-      {gameStatus === 'active' && (
-        <MyRankPill teams={teamSnapshots} myTeamId={teamId} myColor={teamColor} myTokens={tokens} />
-      )}
-
-      {/* Team-color stack (compact leaderboard) — same in lobby and active,
-          ordered by rank (top = #1). */}
-      <TeamStack teams={teamSnapshots} />
+      {/* Top-left HUD column: clock · (rank if active) · team-stack.
+          One flex column so vertical gaps stay equal regardless of whether
+          the rank pill is shown. */}
+      <div style={{
+        position: 'absolute', top: 16, left: 16,
+        display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
+        gap: 10, zIndex: 5,
+      }}>
+        <GameHUD />
+        {gameStatus === 'active' && (
+          <MyRankPill teams={teamSnapshots} myTeamId={teamId} myColor={teamColor} myTokens={tokens} />
+        )}
+        <TeamStack teams={teamSnapshots} />
+      </div>
 
       {gameStatus === 'lobby' && <LobbyBanner />}
 
@@ -302,8 +307,7 @@ function ChallengeCard(props: ChallengeCardProps) {
     onClose, onAccept, onAbandon, onComplete, onSetWager, onFailWager,
   } = props;
 
-  const typeBadgeColor =
-    c.type === 'normal' ? '#3498db' : c.type === 'variable' ? '#2ecc71' : '#9b59b6';
+  const typeBadgeColor = CHALLENGE_COLOR;
 
   return (
     <div
@@ -555,10 +559,10 @@ function TeamStack({ teams }: { teams: TeamSnapshot[] }) {
   return (
     <div
       style={{
-        position: 'absolute',
-        top: 68, left: 22,
+        // Positioned by the parent HUD column; small left-pad so thin bars
+        // sit roughly under the pills' text, not flush with their edge.
         display: 'flex', flexDirection: 'column', alignItems: 'center',
-        gap: 2, zIndex: 4,
+        gap: 2, paddingLeft: 6,
       }}
     >
       {ranked.map(({ team, rank }, i) => {
@@ -601,8 +605,6 @@ function MyRankPill({
     <div
       title="Your team rank and tokens"
       style={{
-        position: 'absolute',
-        top: 54, left: 16,
         background: '#0b0f1a',
         color: 'white',
         borderRadius: 999,
@@ -611,7 +613,6 @@ function MyRankPill({
         fontWeight: 700, fontSize: 14,
         letterSpacing: '0.01em',
         boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
-        zIndex: 5,
       }}
     >
       <span style={{
@@ -661,13 +662,9 @@ function applyMarkerStyle(
   el.style.borderRadius = '50%';
   el.style.cursor = 'pointer';
 
-  const typeColor =
-    challenge.type === 'normal'   ? '#3498db' :
-    challenge.type === 'variable' ? '#2ecc71' : '#9b59b6';
-
   if (challenge.id === activeChallengeId) {
     el.style.border = '3px solid white';
-    el.style.boxShadow = `0 0 10px ${typeColor}`;
+    el.style.boxShadow = `0 0 10px ${CHALLENGE_COLOR}`;
   } else {
     el.style.border = '2px solid white';
     el.style.boxShadow = 'none';
@@ -681,6 +678,6 @@ function applyMarkerStyle(
     ).join(', ');
     el.style.background = `conic-gradient(${stops})`;
   } else {
-    el.style.background = typeColor;
+    el.style.background = CHALLENGE_COLOR;
   }
 }

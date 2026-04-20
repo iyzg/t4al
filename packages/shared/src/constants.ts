@@ -13,16 +13,22 @@ export const DEFAULT_ACTIVE_CHALLENGE_COUNT  = 3;
 export const DEFAULT_CHALLENGE_EXPIRE_MINUTES = 10;
 export const DEFAULT_STARTING_TOKENS         = 50;
 
-// Team palette (7 fixed colors — client-side palette must match)
+// Team palette (7 fixed colors). The server validates the submitted color
+// against this list on team create.
 export const TEAM_COLORS: readonly string[] = [
-  '#e74c3c',
-  '#3498db',
-  '#2ecc71',
-  '#f39c12',
-  '#9b59b6',
-  '#1abc9c',
-  '#e67e22',
+  '#C41230', // red
+  '#0082C8', // blue
+  '#80561B', // brown
+  '#008751', // green
+  '#492F90', // purple
+  '#F38AB4', // pink
+  '#FBD907', // yellow
 ] as const;
+
+// Single color used for all challenge pins and challenge-typed surfaces.
+// Challenge TYPE (normal / variable / wager) is differentiated by icon or
+// text, not by color.
+export const CHALLENGE_COLOR = '#F48027';
 
 // Auth code shapes
 export const JOIN_CODE_LENGTH  = 4;   // uppercase alphanumeric
