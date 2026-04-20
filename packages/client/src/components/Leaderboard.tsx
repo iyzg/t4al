@@ -44,10 +44,10 @@ export default function Leaderboard() {
             />
             <span>{entry.name}</span>
           </div>
-          <span style={{ fontWeight: 'bold', marginLeft: 12 }}>{entry.score}</span>
+          <span style={{ fontWeight: 'bold', marginLeft: 12 }}>{entry.tokens}</span>
         </div>
       ))}
-      {leaderboard.length === 0 && <p style={{ opacity: 0.5, fontSize: 13, margin: 0 }}>No scores yet</p>}
+      {leaderboard.length === 0 && <p style={{ opacity: 0.5, fontSize: 13, margin: 0 }}>No teams yet</p>}
     </div>
   );
 }
