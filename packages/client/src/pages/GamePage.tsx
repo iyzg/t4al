@@ -148,7 +148,7 @@ export default function GamePage() {
     if (!map || !myPos) return;
     if (!posMarkerRef.current) {
       const el = document.createElement('div');
-      el.style.cssText = `width:14px;height:14px;background:${teamColor || '#3498db'};border-radius:50%;border:3px solid white;box-shadow:0 0 6px rgba(0,0,0,0.5);`;
+      el.style.cssText = `width:14px;height:14px;background:${teamColor || '#3498db'};border-radius:50%;border:3px solid white;`;
       posMarkerRef.current = new maplibregl.Marker({ element: el }).setLngLat([myPos.lng, myPos.lat]).addTo(map);
     } else {
       posMarkerRef.current.setLngLat([myPos.lng, myPos.lat]);
@@ -579,7 +579,6 @@ function TeamStack({ teams }: { teams: TeamSnapshot[] }) {
               borderTopRightRadius:    isFirst ? R : 0,
               borderBottomLeftRadius:  isLast  ? R : 0,
               borderBottomRightRadius: isLast  ? R : 0,
-              boxShadow: '0 1px 3px rgba(0,0,0,.35)',
             }}
           />
         );
@@ -612,13 +611,11 @@ function MyRankPill({
         display: 'flex', alignItems: 'center', gap: 8,
         fontWeight: 700, fontSize: 14,
         letterSpacing: '0.01em',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
       }}
     >
       <span style={{
         width: 14, height: 14, borderRadius: '50%',
         background: myColor ?? mine.team.color,
-        boxShadow: 'inset 0 0 0 2px rgba(0,0,0,0.25)',
       }} />
       <span style={{ fontVariantNumeric: 'tabular-nums' }}>
         #{mine.rank}, {myTokens}
@@ -642,7 +639,6 @@ function LobbyBanner() {
         fontWeight: 700,
         fontSize: 20,
         letterSpacing: '-0.01em',
-        boxShadow: '0 8px 28px rgba(0,0,0,.35)',
         zIndex: 5,
       }}
     >
@@ -664,11 +660,10 @@ function applyMarkerStyle(
 
   if (challenge.id === activeChallengeId) {
     el.style.border = '3px solid white';
-    el.style.boxShadow = `0 0 10px ${CHALLENGE_COLOR}`;
   } else {
     el.style.border = '2px solid white';
-    el.style.boxShadow = 'none';
   }
+  el.style.boxShadow = 'none';
   el.style.opacity = '1';
 
   if (teamsOnIt.length > 0) {

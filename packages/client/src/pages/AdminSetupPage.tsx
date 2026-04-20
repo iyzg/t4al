@@ -239,7 +239,7 @@ export default function AdminSetupPage() {
       const el = marker.getElement();
       el.style.border = selected ? '2px solid #ffffff' : '2px solid rgba(255,255,255,0.6)';
       el.style.cursor = selected ? 'grab' : 'pointer';
-      el.style.boxShadow = selected ? '0 0 10px #3498db' : 'none';
+      el.style.boxShadow = 'none';
     });
   }, [editingId, challenges]);
 

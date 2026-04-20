@@ -167,7 +167,7 @@ export default function AdminLivePage() {
         return;
       }
       const el = document.createElement('div');
-      el.style.cssText = `width:18px;height:18px;background:${team?.color ?? '#ccc'};border:3px solid white;border-radius:50%;box-shadow:0 0 8px rgba(0,0,0,0.6);`;
+      el.style.cssText = `width:18px;height:18px;background:${team?.color ?? '#ccc'};border:3px solid white;border-radius:50%;`;
       el.title = team?.name ?? '';
       const marker = new maplibregl.Marker({ element: el }).setLngLat([p.lng, p.lat]).addTo(map);
       teamMarkersRef.current.set(p.teamId, marker);

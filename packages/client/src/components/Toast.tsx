@@ -29,7 +29,6 @@ export default function Toast() {
         zIndex: 20,
         fontSize: 14,
         fontWeight: 500,
-        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
         cursor: 'pointer',
         maxWidth: 320,
       }}

@@ -50,7 +50,6 @@ export default function GameHUD() {
         letterSpacing: '0.02em',
         fontVariantNumeric: 'tabular-nums',
         opacity: dimmed ? 0.75 : 1,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
       }}
     >
       {countdown || '\u2014:\u2014'}
