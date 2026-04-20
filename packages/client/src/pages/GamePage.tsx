@@ -15,7 +15,6 @@ import {
 } from '../socketHandlers';
 import { LOCATION_PING_INTERVAL_MS } from '@t4al/shared';
 import type { Challenge, TeamSnapshot } from '@t4al/shared';
-import Leaderboard from '../components/Leaderboard';
 import GameHUD from '../components/GameHUD';
 import Toast from '../components/Toast';
 
@@ -244,26 +243,16 @@ export default function GamePage() {
       <GameHUD />
       <Toast />
 
-      {/* Team-color stack is the compact "leaderboard" — stays the same in
-          lobby and active states. */}
+      {/* My rank + token pill, directly under the clock — active state only */}
+      {gameStatus === 'active' && (
+        <MyRankPill teams={teamSnapshots} myTeamId={teamId} myColor={teamColor} myTokens={tokens} />
+      )}
+
+      {/* Team-color stack (compact leaderboard) — same in lobby and active,
+          ordered by rank (top = #1). */}
       <TeamStack teams={teamSnapshots} />
 
       {gameStatus === 'lobby' && <LobbyBanner />}
-
-      {gameStatus === 'active' && (
-        <>
-          <Leaderboard />
-          <div style={{
-            position: 'absolute', top: 16, right: 16,
-            background: '#0b0f1a', color: 'white',
-            borderRadius: 999, padding: '6px 14px',
-            fontWeight: 700, fontSize: 15,
-            zIndex: 5, boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
-          }}>
-            {tokens} 🪙
-          </div>
-        </>
-      )}
 
       {selectedChallenge && (
         <ChallengeCard
@@ -550,11 +539,19 @@ function WagerSetup({
 //   - A compact vertical stack of team colors on the left (the current player's
 //     team gets a distinct "pill" treatment at the top of the stack).
 //   - A large rounded white banner at the bottom saying "Game starting soon! :)"
+// Compute [team, rank] pairs sorted by tokens desc, name asc (matches server).
+function rankedTeams(teams: TeamSnapshot[]): Array<{ team: TeamSnapshot; rank: number }> {
+  return [...teams]
+    .sort((a, b) => b.tokens - a.tokens || a.name.localeCompare(b.name))
+    .map((team, i) => ({ team, rank: i + 1 }));
+}
+
 // Segmented vertical stack of all teams (including yours). Only the very
 // top and very bottom outer corners are rounded; internal edges are flat.
-// Used in both lobby and active states.
+// Ordered by rank — top bar is #1.
 function TeamStack({ teams }: { teams: TeamSnapshot[] }) {
   const R = 4;
+  const ranked = rankedTeams(teams);
   return (
     <div
       style={{
@@ -564,16 +561,16 @@ function TeamStack({ teams }: { teams: TeamSnapshot[] }) {
         gap: 2, zIndex: 4,
       }}
     >
-      {teams.map((t, i) => {
+      {ranked.map(({ team, rank }, i) => {
         const isFirst = i === 0;
-        const isLast  = i === teams.length - 1;
+        const isLast  = i === ranked.length - 1;
         return (
           <span
-            key={t.id}
-            title={t.name}
+            key={team.id}
+            title={`${team.name} · #${rank} · ${team.tokens}`}
             style={{
               width: 8, height: 22,
-              background: t.color,
+              background: team.color,
               borderTopLeftRadius:     isFirst ? R : 0,
               borderTopRightRadius:    isFirst ? R : 0,
               borderBottomLeftRadius:  isLast  ? R : 0,
@@ -583,6 +580,48 @@ function TeamStack({ teams }: { teams: TeamSnapshot[] }) {
           />
         );
       })}
+    </div>
+  );
+}
+
+// Shows the current player's rank and token balance, styled like the clock pill
+// and placed directly beneath it.
+function MyRankPill({
+  teams, myTeamId, myColor, myTokens,
+}: {
+  teams: TeamSnapshot[];
+  myTeamId: string | null;
+  myColor: string | null;
+  myTokens: number;
+}) {
+  const ranked = rankedTeams(teams);
+  const mine = myTeamId ? ranked.find((r) => r.team.id === myTeamId) : null;
+  if (!mine) return null;
+  return (
+    <div
+      title="Your team rank and tokens"
+      style={{
+        position: 'absolute',
+        top: 54, left: 16,
+        background: '#0b0f1a',
+        color: 'white',
+        borderRadius: 999,
+        padding: '5px 12px 5px 6px',
+        display: 'flex', alignItems: 'center', gap: 8,
+        fontWeight: 700, fontSize: 14,
+        letterSpacing: '0.01em',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+        zIndex: 5,
+      }}
+    >
+      <span style={{
+        width: 14, height: 14, borderRadius: '50%',
+        background: myColor ?? mine.team.color,
+        boxShadow: 'inset 0 0 0 2px rgba(0,0,0,0.25)',
+      }} />
+      <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+        #{mine.rank}, {myTokens}
+      </span>
     </div>
   );
 }
