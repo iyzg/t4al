@@ -3,21 +3,36 @@ import { useParams } from 'react-router-dom';
 import maplibregl from 'maplibre-gl';
 import { getMapStyle, CHICAGO_CENTER } from '../mapStyle';
 import { ensurePmtilesProtocol } from '../mapSetup';
+import type { Challenge, ChallengeType } from '@t4al/shared';
 
 ensurePmtilesProtocol();
 
-interface ChallengeForm {
+type ChallengeForm = {
   lat: number;
   lng: number;
   name: string;
   description: string;
-  points: number;
+  type: ChallengeType;
+  tokens: number;           // used when type=normal
+  tokensPerUnit: number;    // used when type=variable
+  unitLabel: string;        // used when type=variable
   proximityMeters: number;
-}
+};
 
-interface SavedChallenge extends ChallengeForm {
-  id: string;
-  sortOrder: number;
+type SavedChallenge = Challenge;
+
+const BLANK_FORM: ChallengeForm = {
+  lat: 0, lng: 0,
+  name: '', description: '',
+  type: 'normal',
+  tokens: 100,
+  tokensPerUnit: 10,
+  unitLabel: 'rep',
+  proximityMeters: 100,
+};
+
+function typeColor(t: ChallengeType): string {
+  return t === 'normal' ? '#3498db' : t === 'variable' ? '#2ecc71' : '#9b59b6';
 }
 
 /** Build a GeoJSON polygon approximating a circle on the map */
@@ -31,6 +46,11 @@ function circlePolygon(lat: number, lng: number, radiusMeters: number, steps = 6
     coords.push([lng + dLng, lat + dLat]);
   }
   return { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [coords] } };
+}
+
+function adminHeaders(gameId: string): HeadersInit {
+  const adminCode = localStorage.getItem(`adminCode:${gameId}`) ?? '';
+  return { 'Content-Type': 'application/json', 'x-admin-code': adminCode };
 }
 
 export default function AdminSetupPage() {
@@ -48,34 +68,24 @@ export default function AdminSetupPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showOrderPanel, setShowOrderPanel] = useState(false);
+  const [error, setError] = useState('');
 
-  // Keep refs in sync for use in imperative map callbacks
   useEffect(() => { challengesRef.current = challenges; }, [challenges]);
   useEffect(() => { editingIdRef.current = editingId; }, [editingId]);
   useEffect(() => { popoverRef.current = popover; }, [popover]);
 
-  // Load existing challenges on mount
+  // Load existing challenges
   useEffect(() => {
-    fetch(`/api/games/${gameId}/challenges`)
+    if (!gameId) return;
+    fetch(`/api/games/${gameId}/challenges`, { headers: adminHeaders(gameId) })
       .then((r) => r.ok ? r.json() : [])
-      .then((rows) => {
-        if (!Array.isArray(rows)) return;
-        setChallenges(rows.map((r: any) => ({
-          id: r.id,
-          lat: Number(r.lat),
-          lng: Number(r.lng),
-          name: r.name,
-          description: r.description,
-          points: r.points,
-          proximityMeters: r.proximity_meters,
-          sortOrder: r.sort_order,
-        })));
+      .then((rows: Challenge[]) => {
+        if (Array.isArray(rows)) setChallenges(rows);
       })
       .catch(() => {});
   }, [gameId]);
 
   // --- Map helpers ---
-
   const updateRadiusCircle = useCallback((lat: number, lng: number, radiusMeters: number) => {
     const src = mapRef.current?.getSource('radius-circle') as maplibregl.GeoJSONSource | undefined;
     src?.setData(circlePolygon(lat, lng, radiusMeters) as any);
@@ -112,15 +122,11 @@ export default function AdminSetupPage() {
     if (orig && marker) marker.setLngLat([orig.lng, orig.lat]);
   }, []);
 
-  // Sync radius circle + preview marker with popover state
   useEffect(() => {
     if (popover) {
       updateRadiusCircle(popover.lat, popover.lng, popover.proximityMeters);
-      if (editingId) {
-        hidePreviewMarker();
-      } else {
-        showPreviewMarker(popover.lat, popover.lng);
-      }
+      if (editingId) hidePreviewMarker();
+      else showPreviewMarker(popover.lat, popover.lng);
     } else {
       clearRadiusCircle();
       hidePreviewMarker();
@@ -128,10 +134,9 @@ export default function AdminSetupPage() {
   }, [popover?.lat, popover?.lng, popover?.proximityMeters, editingId,
       updateRadiusCircle, clearRadiusCircle, showPreviewMarker, hidePreviewMarker]);
 
-  // Initialize map
+  // Init map
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
-
     try {
       const map = new maplibregl.Map({
         container: containerRef.current,
@@ -146,15 +151,11 @@ export default function AdminSetupPage() {
           data: { type: 'FeatureCollection', features: [] },
         });
         map.addLayer({
-          id: 'radius-circle-fill',
-          type: 'fill',
-          source: 'radius-circle',
+          id: 'radius-circle-fill', type: 'fill', source: 'radius-circle',
           paint: { 'fill-color': '#f39c12', 'fill-opacity': 0.15 },
         });
         map.addLayer({
-          id: 'radius-circle-stroke',
-          type: 'line',
-          source: 'radius-circle',
+          id: 'radius-circle-stroke', type: 'line', source: 'radius-circle',
           paint: { 'line-color': '#f39c12', 'line-width': 2, 'line-dasharray': [2, 2] },
         });
       });
@@ -162,16 +163,8 @@ export default function AdminSetupPage() {
       map.on('click', (e) => {
         const prevId = editingIdRef.current;
         if (prevId) revertMarker(prevId);
-
         setEditingId(null);
-        setPopover({
-          lat: e.lngLat.lat,
-          lng: e.lngLat.lng,
-          name: '',
-          description: '',
-          points: 100,
-          proximityMeters: 100,
-        });
+        setPopover({ ...BLANK_FORM, lat: e.lngLat.lat, lng: e.lngLat.lng });
       });
 
       mapRef.current = map;
@@ -181,7 +174,7 @@ export default function AdminSetupPage() {
     }
   }, []);
 
-  // Sync markers with challenges array
+  // Sync markers
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -197,12 +190,13 @@ export default function AdminSetupPage() {
       const existing = markersRef.current.get(c.id);
       if (existing) {
         existing.setLngLat([c.lng, c.lat]);
+        const el = existing.getElement();
+        el.style.background = typeColor(c.type);
         return;
       }
-
       const el = document.createElement('div');
       el.style.cssText =
-        'width:16px;height:16px;background:#f39c12;border-radius:50%;border:2px solid white;cursor:pointer;';
+        `width:18px;height:18px;background:${typeColor(c.type)};border-radius:50%;border:2px solid white;cursor:pointer;`;
       const marker = new maplibregl.Marker({ element: el, draggable: false })
         .setLngLat([c.lng, c.lat])
         .addTo(map);
@@ -211,12 +205,18 @@ export default function AdminSetupPage() {
         ev.stopPropagation();
         const prevId = editingIdRef.current;
         if (prevId && prevId !== c.id) revertMarker(prevId);
-
         const fresh = challengesRef.current.find((ch) => ch.id === c.id);
         if (!fresh) return;
-        const { id: _, sortOrder: __, ...form } = fresh;
         setEditingId(c.id);
-        setPopover(form);
+        setPopover({
+          lat: fresh.lat, lng: fresh.lng,
+          name: fresh.name, description: fresh.description,
+          type: fresh.type,
+          tokens:         fresh.tokens        ?? BLANK_FORM.tokens,
+          tokensPerUnit:  fresh.tokensPerUnit ?? BLANK_FORM.tokensPerUnit,
+          unitLabel:      fresh.unitLabel     ?? BLANK_FORM.unitLabel,
+          proximityMeters: fresh.proximityMeters,
+        });
       });
 
       marker.on('drag', () => {
@@ -224,63 +224,88 @@ export default function AdminSetupPage() {
         const radius = popoverRef.current?.proximityMeters ?? 100;
         updateRadiusCircle(lat, lng, radius);
       });
-
       marker.on('dragend', () => {
         const { lat, lng } = marker.getLngLat();
         setPopover((prev) => prev ? { ...prev, lat, lng } : null);
       });
-
       markersRef.current.set(c.id, marker);
     });
   }, [challenges, revertMarker]);
 
-  // Toggle draggable + visual highlight on selected marker
   useEffect(() => {
     markersRef.current.forEach((marker, id) => {
       const selected = id === editingId;
       marker.setDraggable(selected);
       const el = marker.getElement();
-      el.style.border = selected ? '2px solid #3498db' : '2px solid white';
+      el.style.border = selected ? '2px solid #ffffff' : '2px solid rgba(255,255,255,0.6)';
       el.style.cursor = selected ? 'grab' : 'pointer';
       el.style.boxShadow = selected ? '0 0 10px #3498db' : 'none';
     });
   }, [editingId, challenges]);
 
-  // --- Save / Cancel / Delete ---
+  // --- Save / Delete ---
+
+  function buildPayload(form: ChallengeForm) {
+    const base = {
+      name: form.name, description: form.description,
+      type: form.type, lat: form.lat, lng: form.lng,
+      proximityMeters: form.proximityMeters,
+    };
+    if (form.type === 'normal')   return { ...base, tokens: form.tokens };
+    if (form.type === 'variable') return { ...base, tokensPerUnit: form.tokensPerUnit, unitLabel: form.unitLabel };
+    return base; // wager — no token fields
+  }
 
   async function handleSave() {
-    if (!popover || saving) return;
+    if (!popover || !gameId || saving) return;
+    if (!popover.name.trim() || !popover.description.trim()) {
+      setError('Name and description are required.');
+      return;
+    }
+    setError('');
     setSaving(true);
     const url = editingId
       ? `/api/challenges/${editingId}`
       : `/api/games/${gameId}/challenges`;
     const method = editingId ? 'PUT' : 'POST';
 
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(popover),
-    });
-    if (!res.ok) { setSaving(false); alert('Failed to save challenge'); return; }
-    const data = await res.json();
-
-    if (editingId) {
-      setChallenges((prev) =>
-        prev.map((c) => (c.id === editingId ? { ...popover, id: editingId, sortOrder: c.sortOrder } : c)),
-      );
-    } else {
-      setChallenges((prev) => [...prev, { ...popover, id: data.id, sortOrder: data.sort_order }]);
+    try {
+      const res = await fetch(url, {
+        method, headers: adminHeaders(gameId),
+        body: JSON.stringify(buildPayload(popover)),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        setError(err?.error || 'Failed to save challenge');
+        setSaving(false);
+        return;
+      }
+      const data: Challenge = await res.json();
+      if (editingId) {
+        setChallenges((prev) => prev.map((c) => (c.id === editingId ? data : c)));
+      } else {
+        setChallenges((prev) => [...prev, data]);
+      }
+      setPopover(null);
+      setEditingId(null);
+    } catch {
+      setError('Network error');
+    } finally {
+      setSaving(false);
     }
-
-    setSaving(false);
-    setPopover(null);
-    setEditingId(null);
   }
 
   async function handleDelete() {
-    if (!editingId) return;
-    const res = await fetch(`/api/challenges/${editingId}`, { method: 'DELETE' });
-    if (!res.ok) { alert('Failed to delete challenge'); return; }
+    if (!editingId || !gameId) return;
+    const res = await fetch(`/api/challenges/${editingId}`, {
+      method: 'DELETE',
+      headers: adminHeaders(gameId),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      setError(err?.error || 'Failed to delete');
+      return;
+    }
     setChallenges((prev) => prev.filter((c) => c.id !== editingId));
     setPopover(null);
     setEditingId(null);
@@ -290,31 +315,27 @@ export default function AdminSetupPage() {
     if (editingId) revertMarker(editingId);
     setPopover(null);
     setEditingId(null);
+    setError('');
   }
 
-  // --- Reorder ---
-
   async function moveChallenge(index: number, direction: -1 | 1) {
+    if (!gameId) return;
     const newIndex = index + direction;
     if (newIndex < 0 || newIndex >= challenges.length) return;
 
-    const newChallenges = [...challenges];
-    const [item] = newChallenges.splice(index, 1);
-    newChallenges.splice(newIndex, 0, item);
-
-    // Update sortOrder based on position
-    const reordered = newChallenges.map((c, i) => ({ ...c, sortOrder: i + 1 }));
+    const sorted = [...challenges].sort((a, b) => a.sortOrder - b.sortOrder);
+    const [item] = sorted.splice(index, 1);
+    sorted.splice(newIndex, 0, item);
+    const reordered = sorted.map((c, i) => ({ ...c, sortOrder: i + 1 }));
     setChallenges(reordered);
 
-    // Save to server
-    await fetch(`/api/games/${gameId}/challenges/reorder`, {
+    await fetch(`/api/games/${gameId}/challenges/order`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: adminHeaders(gameId),
       body: JSON.stringify({ order: reordered.map((c) => ({ id: c.id, sortOrder: c.sortOrder })) }),
     });
   }
 
-  // --- Render ---
   return (
     <div style={{ position: 'relative', width: '100%', height: '100vh' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
@@ -328,44 +349,83 @@ export default function AdminSetupPage() {
           display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
         }}>
           <span style={{ flex: '1 1 auto' }}>Click anywhere on the map to create a challenge</span>
-          <button
-            onClick={() => setShowOrderPanel(true)}
+          <button onClick={() => setShowOrderPanel(true)}
             style={{ padding: '4px 12px', background: '#3498db', border: 'none', borderRadius: 4, color: 'white', cursor: 'pointer', whiteSpace: 'nowrap' }}>
             Challenge Order ({challenges.length})
           </button>
           <a href={`/game/${gameId}/admin`}
             style={{ color: '#3498db', textDecoration: 'none', whiteSpace: 'nowrap' }}>
-            Back to Admin Panel
+            Admin Panel
           </a>
         </div>
       )}
 
-      {/* Challenge creation/edit popover */}
+      {/* Popover */}
       {popover && (
         <div className="setup-popover" style={{
-          position: 'absolute', top: 16, right: 16, width: 300,
+          position: 'absolute', top: 16, right: 16, width: 320,
           background: '#1a1a2e', color: 'white', padding: 16, borderRadius: 8,
           display: 'flex', flexDirection: 'column', gap: 8,
+          maxHeight: 'calc(100vh - 32px)', overflow: 'auto',
         }}>
           <h3 style={{ margin: 0 }}>{editingId ? 'Edit Challenge' : 'New Challenge'}</h3>
+
+          <label>Type</label>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {(['normal', 'variable', 'wager'] as ChallengeType[]).map((t) => (
+              <button key={t}
+                onClick={() => setPopover({ ...popover, type: t })}
+                style={{
+                  flex: 1, padding: '6px 4px',
+                  background: popover.type === t ? typeColor(t) : '#2a2a3e',
+                  color: 'white', border: 'none', borderRadius: 4,
+                  cursor: 'pointer', fontSize: 12, textTransform: 'uppercase',
+                  fontWeight: popover.type === t ? 'bold' : 'normal',
+                }}>
+                {t}
+              </button>
+            ))}
+          </div>
 
           <label>Name</label>
           <input value={popover.name} onChange={(e) => setPopover({ ...popover, name: e.target.value })} />
 
-          <label>Description (hidden until activated)</label>
+          <label>Description (hidden until in range)</label>
           <textarea value={popover.description} onChange={(e) => setPopover({ ...popover, description: e.target.value })} rows={3} />
 
-          <label>Points</label>
-          <input type="number" value={popover.points} onChange={(e) => setPopover({ ...popover, points: Number(e.target.value) })} />
+          {popover.type === 'normal' && (
+            <>
+              <label>Tokens</label>
+              <input type="number" value={popover.tokens}
+                onChange={(e) => setPopover({ ...popover, tokens: Math.max(0, Number(e.target.value) || 0) })} />
+            </>
+          )}
+          {popover.type === 'variable' && (
+            <>
+              <label>Tokens per unit</label>
+              <input type="number" value={popover.tokensPerUnit}
+                onChange={(e) => setPopover({ ...popover, tokensPerUnit: Math.max(0, Number(e.target.value) || 0) })} />
+              <label>Unit label (e.g. "pushup", "photo")</label>
+              <input value={popover.unitLabel}
+                onChange={(e) => setPopover({ ...popover, unitLabel: e.target.value })} />
+            </>
+          )}
+          {popover.type === 'wager' && (
+            <p style={{ opacity: 0.6, fontSize: 13, margin: '0 0 4px' }}>
+              Wager: team picks an amount; pass = +2× wager, fail = −wager.
+            </p>
+          )}
 
           <label>Activation Radius: {popover.proximityMeters}m</label>
           <input type="range" min={50} max={300} value={popover.proximityMeters}
             onChange={(e) => setPopover({ ...popover, proximityMeters: Number(e.target.value) })} />
 
+          {error && <p style={{ color: '#e74c3c', margin: 0 }}>{error}</p>}
+
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={handleSave} disabled={saving}
               style={{ flex: 1, padding: 8, opacity: saving ? 0.5 : 1 }}>
-              {saving ? 'Saving...' : 'Save'}
+              {saving ? 'Saving…' : 'Save'}
             </button>
             <button onClick={handleCancel} disabled={saving} style={{ flex: 1, padding: 8 }}>Cancel</button>
           </div>
@@ -378,7 +438,7 @@ export default function AdminSetupPage() {
         </div>
       )}
 
-      {/* Challenge order panel */}
+      {/* Order panel */}
       {showOrderPanel && (
         <div style={{
           position: 'absolute', top: 16, right: 16, width: 320,
@@ -388,38 +448,33 @@ export default function AdminSetupPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <h3 style={{ margin: 0 }}>Challenge Order</h3>
             <button onClick={() => setShowOrderPanel(false)}
-              style={{ background: 'none', border: 'none', color: 'white', fontSize: 18, cursor: 'pointer' }}>
-              x
-            </button>
+              style={{ background: 'none', border: 'none', color: 'white', fontSize: 18, cursor: 'pointer' }}>×</button>
           </div>
           <p style={{ fontSize: 12, opacity: 0.6, margin: '0 0 12px' }}>
-            Challenges at the top appear first when the game starts.
+            Top of the list activates first. K challenges are on the map at once.
           </p>
-          {challenges
+          {[...challenges]
             .sort((a, b) => a.sortOrder - b.sortOrder)
             .map((c, i) => (
-            <div key={c.id} style={{
-              display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6,
-              padding: '6px 8px', background: '#2a2a3e', borderRadius: 4,
-            }}>
-              <span style={{ opacity: 0.5, width: 20, fontSize: 12 }}>#{i + 1}</span>
-              <span style={{ flex: 1, fontSize: 14 }}>{c.name}</span>
-              <span style={{ opacity: 0.5, fontSize: 12 }}>{c.points}pts</span>
-              <button
-                onClick={() => moveChallenge(i, -1)}
-                disabled={i === 0}
-                style={{ background: 'none', border: 'none', color: i === 0 ? '#555' : 'white', cursor: i === 0 ? 'default' : 'pointer', fontSize: 16, padding: '2px 6px' }}>
-                ^
-              </button>
-              <button
-                onClick={() => moveChallenge(i, 1)}
-                disabled={i === challenges.length - 1}
-                style={{ background: 'none', border: 'none', color: i === challenges.length - 1 ? '#555' : 'white', cursor: i === challenges.length - 1 ? 'default' : 'pointer', fontSize: 16, padding: '2px 6px' }}>
-                v
-              </button>
-            </div>
-          ))}
-          {challenges.length === 0 && <p style={{ opacity: 0.5, fontSize: 13 }}>No challenges created yet</p>}
+              <div key={c.id} style={{
+                display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6,
+                padding: '6px 8px', background: '#2a2a3e', borderRadius: 4,
+              }}>
+                <span style={{
+                  fontSize: 10, padding: '1px 6px', borderRadius: 8,
+                  background: typeColor(c.type), fontWeight: 'bold',
+                }}>
+                  {c.type.charAt(0).toUpperCase()}
+                </span>
+                <span style={{ opacity: 0.5, width: 20, fontSize: 12 }}>#{i + 1}</span>
+                <span style={{ flex: 1, fontSize: 14 }}>{c.name}</span>
+                <button onClick={() => moveChallenge(i, -1)} disabled={i === 0}
+                  style={{ background: 'none', border: 'none', color: i === 0 ? '#555' : 'white', cursor: i === 0 ? 'default' : 'pointer', fontSize: 16, padding: '2px 6px' }}>↑</button>
+                <button onClick={() => moveChallenge(i, 1)} disabled={i === challenges.length - 1}
+                  style={{ background: 'none', border: 'none', color: i === challenges.length - 1 ? '#555' : 'white', cursor: i === challenges.length - 1 ? 'default' : 'pointer', fontSize: 16, padding: '2px 6px' }}>↓</button>
+              </div>
+            ))}
+          {challenges.length === 0 && <p style={{ opacity: 0.5, fontSize: 13 }}>No challenges yet</p>}
         </div>
       )}
     </div>
