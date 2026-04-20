@@ -8,33 +8,42 @@ export interface Game {
   status: GameStatus;
   durationMinutes: number;
   activeChallengeCount: number;       // K — how many challenges active at once
-  challengeExpireMinutes: number;     // challenges expire after this many minutes
-  startTime: Date | null;             // set when game starts
-  endTime: Date | null;               // computed: startTime + durationMinutes
+  challengeExpireMinutes: number;     // X — minutes before an active challenge expires
+  startingTokens: number;             // initial token balance for every team
+  startTime: Date | null;
+  endTime: Date | null;
   joinCode: string;
   adminCode: string;
   createdAt: Date;
 }
 
+export type ChallengeType = 'normal' | 'variable' | 'wager';
 export type ChallengeStatus = 'queued' | 'active' | 'claimed' | 'expired';
 
 export interface Challenge {
   id: string;
   gameId: string;
 
-  // Content
   name: string;
   description: string;
-  points: number;
+  type: ChallengeType;
+
+  // Type-dependent token fields
+  //   normal:   tokens non-null; tokensPerUnit + unitLabel null
+  //   variable: tokensPerUnit + unitLabel non-null; tokens null
+  //   wager:    all three null (team picks at wager-set time)
+  tokens: number | null;
+  tokensPerUnit: number | null;
+  unitLabel: string | null;
 
   lat: number;
   lng: number;
   proximityMeters: number;
 
-  sortOrder: number;                  // queue position; admin sets this
+  sortOrder: number;
 
   status: ChallengeStatus;
-  activatedAt: Date | null;           // when this challenge became active (visible on map)
+  activatedAt: Date | null;
   claimedByTeamId: string | null;
   claimedAt: Date | null;
 }
@@ -42,10 +51,11 @@ export interface Challenge {
 export interface Team {
   id: string;
   gameId: string;
-  name: string;
-  color: string;
-  score: number;
-  activeChallengeId: string | null;
+  name: string;                       // unique within gameId
+  color: string;                      // unique within gameId (from fixed palette)
+  tokens: number;                     // current token balance
+  activeChallengeId: string | null;   // the one challenge this team is working on
+  wagerAmount: number | null;         // set when team locks in a wager (private to team)
   joinedAt: Date;
 }
 
@@ -58,10 +68,22 @@ export interface LocationHistory {
   recordedAt: Date;
 }
 
+export type GameEventType =
+  | 'game:started'
+  | 'game:ended'
+  | 'team:created'
+  | 'team:reassigned'
+  | 'challenge:spawned'
+  | 'challenge:accepted'
+  | 'challenge:abandoned'
+  | 'challenge:claimed'
+  | 'challenge:expired'
+  | 'challenge:wagerFailed';
+
 export interface GameEvent {
   id: string;
   gameId: string;
-  type: string;
+  type: GameEventType;
   payload: Record<string, unknown>;
   createdAt: Date;
 }
@@ -72,15 +94,22 @@ export interface LeaderboardEntry {
   id: string;
   name: string;
   color: string;
-  score: number;
+  tokens: number;
   rank: number;
 }
 
-// Team info included in game:state snapshot
+// Team info included in game:state snapshot (public, visible to all clients)
 export interface TeamSnapshot {
   id: string;
   name: string;
   color: string;
-  score: number;
+  tokens: number;
   activeChallengeId: string | null;
+}
+
+// Private team state (delivered to team room only)
+export interface TeamPrivateState {
+  activeChallengeId: string | null;
+  wagerAmount: number | null;
+  tokens: number;
 }
