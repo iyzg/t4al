@@ -3,13 +3,21 @@ import { useNavigate } from 'react-router-dom';
 import maplibregl from 'maplibre-gl';
 import { getMapStyle, CHICAGO_CENTER, DEFAULT_ZOOM } from '../mapStyle';
 import { ensurePmtilesProtocol } from '../mapSetup';
-import { useGameStore } from '../store';
+import { useGameStore, getOrCreateDeviceId } from '../store';
 import { socket } from '../socket';
-import { registerSocketHandlers } from '../socketHandlers';
-import { HEARTBEAT_INTERVAL_MS } from '@t4al/shared';
+import {
+  registerSocketHandlers,
+  emitAccept,
+  emitWager,
+  emitComplete,
+  emitFail,
+  emitAbandon,
+} from '../socketHandlers';
+import { LOCATION_PING_INTERVAL_MS } from '@t4al/shared';
 import type { Challenge, TeamSnapshot } from '@t4al/shared';
 import Leaderboard from '../components/Leaderboard';
 import GameHUD from '../components/GameHUD';
+import Toast from '../components/Toast';
 
 ensurePmtilesProtocol();
 
@@ -24,9 +32,15 @@ function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number):
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/** Get team colors working on a challenge (for pie chart visual) */
 function getTeamsOnChallenge(challengeId: string, teamSnapshots: TeamSnapshot[]): TeamSnapshot[] {
   return teamSnapshots.filter((t) => t.activeChallengeId === challengeId);
+}
+
+// Type-specific "reward" string shown on the pin and card header
+function rewardLabel(c: Challenge): string {
+  if (c.type === 'normal')   return `${c.tokens} tokens`;
+  if (c.type === 'variable') return `${c.tokensPerUnit}/${c.unitLabel}`;
+  return 'WAGER';
 }
 
 export default function GamePage() {
@@ -37,24 +51,25 @@ export default function GamePage() {
   const posMarkerRef = useRef<maplibregl.Marker | null>(null);
   const myPosRef = useRef<{ lat: number; lng: number } | null>(null);
 
-  const challenges = useGameStore((s) => s.challenges);
+  const challenges        = useGameStore((s) => s.challenges);
   const activeChallengeId = useGameStore((s) => s.activeChallengeId);
-  const teamId = useGameStore((s) => s.teamId);
-  const gameStatus = useGameStore((s) => s.gameStatus);
-  const teamColor = useGameStore((s) => s.teamColor);
-  const gameId = useGameStore((s) => s.gameId);
-  const teamSnapshots = useGameStore((s) => s.teamSnapshots);
+  const wagerAmount       = useGameStore((s) => s.wagerAmount);
+  const tokens            = useGameStore((s) => s.tokens);
+  const teamId            = useGameStore((s) => s.teamId);
+  const gameStatus        = useGameStore((s) => s.gameStatus);
+  const teamColor         = useGameStore((s) => s.teamColor);
+  const gameId            = useGameStore((s) => s.gameId);
+  const teamSnapshots     = useGameStore((s) => s.teamSnapshots);
+  const acceptedLocally   = useGameStore((s) => s.acceptedLocally);
 
   const [selectedChallengeId, setSelectedChallengeId] = useState<string | null>(null);
   const [myPos, setMyPos] = useState<{ lat: number; lng: number } | null>(null);
 
   const selectedChallenge = selectedChallengeId ? challenges[selectedChallengeId] ?? null : null;
 
-  useEffect(() => {
-    registerSocketHandlers();
-  }, []);
+  useEffect(() => { registerSocketHandlers(); }, []);
 
-  // Restore identity from sessionStorage on refresh, or redirect to join
+  // Restore identity from sessionStorage on refresh, else redirect to /join
   useEffect(() => {
     if (gameId && teamId) return;
     const saved = sessionStorage.getItem('t4al_identity');
@@ -64,10 +79,11 @@ export default function GamePage() {
     }
     try {
       const { gameId: gid, teamId: tid, teamColor: tc } = JSON.parse(saved);
-      useGameStore.getState().setIdentity(gid, tid, tc);
+      const deviceId = getOrCreateDeviceId();
+      useGameStore.getState().setIdentity({ gameId: gid, teamId: tid, teamColor: tc, deviceId });
       registerSocketHandlers();
       socket.connect();
-      socket.emit('game:join', { gameId: gid, teamId: tid });
+      socket.emit('game:join', { gameId: gid, teamId: tid, deviceId });
     } catch {
       navigate('/join');
     }
@@ -75,20 +91,20 @@ export default function GamePage() {
 
   // Redirect to end page when game ends
   useEffect(() => {
-    if (gameStatus === 'ended' && gameId) {
-      navigate(`/game/${gameId}/end`);
-    }
+    if (gameStatus === 'ended' && gameId) navigate(`/game/${gameId}/end`);
   }, [gameStatus, gameId, navigate]);
 
-  // Start GPS tracking + heartbeat
+  // Start GPS + per-device ping heartbeat
   useEffect(() => {
     if (!teamId || !gameId) return;
+    const deviceId = getOrCreateDeviceId();
 
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude: lat, longitude: lng } = pos.coords;
         setMyPos({ lat, lng });
         myPosRef.current = { lat, lng };
+        useGameStore.getState().setMyLocation({ lat, lng });
       },
       (err) => console.warn('GPS error:', err.message),
       { enableHighAccuracy: true },
@@ -97,9 +113,9 @@ export default function GamePage() {
     const heartbeat = setInterval(() => {
       const pos = myPosRef.current;
       if (pos) {
-        socket.emit('location:update', { teamId, lat: pos.lat, lng: pos.lng });
+        socket.emit('location:update', { deviceId, teamId, lat: pos.lat, lng: pos.lng });
       }
-    }, HEARTBEAT_INTERVAL_MS);
+    }, LOCATION_PING_INTERVAL_MS);
 
     return () => {
       navigator.geolocation.clearWatch(watchId);
@@ -110,7 +126,6 @@ export default function GamePage() {
   // Initialize map
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
-
     try {
       const map = new maplibregl.Map({
         container: containerRef.current,
@@ -118,7 +133,6 @@ export default function GamePage() {
         center: CHICAGO_CENTER,
         zoom: DEFAULT_ZOOM,
       });
-
       mapRef.current = map;
       return () => {
         map.remove();
@@ -129,11 +143,10 @@ export default function GamePage() {
     }
   }, []);
 
-  // Sync my position marker
+  // Sync my GPS dot
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !myPos) return;
-
     if (!posMarkerRef.current) {
       const el = document.createElement('div');
       el.style.cssText = `width:14px;height:14px;background:${teamColor || '#3498db'};border-radius:50%;border:3px solid white;box-shadow:0 0 6px rgba(0,0,0,0.5);`;
@@ -151,7 +164,6 @@ export default function GamePage() {
     const challengeList = Object.values(challenges);
     const currentIds = new Set(challengeList.map((c) => c.id));
 
-    // Remove stale markers (claimed/expired challenges removed from store)
     markersRef.current.forEach((marker, id) => {
       if (!currentIds.has(id)) {
         marker.remove();
@@ -159,21 +171,17 @@ export default function GamePage() {
       }
     });
 
-    // Add/update markers for active challenges
     challengeList.forEach((c) => {
       if (c.status !== 'active') return;
-
       const teamsOnIt = getTeamsOnChallenge(c.id, teamSnapshots);
       const existing = markersRef.current.get(c.id);
-
       if (existing) {
         existing.setLngLat([c.lng, c.lat]);
-        applyMarkerStyle(existing.getElement(), c, activeChallengeId, teamId, teamsOnIt);
+        applyMarkerStyle(existing.getElement(), c, activeChallengeId, teamsOnIt);
         return;
       }
-
       const el = document.createElement('div');
-      applyMarkerStyle(el, c, activeChallengeId, teamId, teamsOnIt);
+      applyMarkerStyle(el, c, activeChallengeId, teamsOnIt);
       el.addEventListener('click', (e) => {
         e.stopPropagation();
         setSelectedChallengeId(c.id);
@@ -181,40 +189,53 @@ export default function GamePage() {
       const marker = new maplibregl.Marker({ element: el }).setLngLat([c.lng, c.lat]).addTo(map);
       markersRef.current.set(c.id, marker);
     });
-  }, [challenges, activeChallengeId, teamId, teamSnapshots]);
+  }, [challenges, activeChallengeId, teamSnapshots]);
 
-  // Deselect challenge if it was removed (claimed/expired)
+  // Deselect gone challenge
   useEffect(() => {
-    if (selectedChallengeId && !challenges[selectedChallengeId]) {
-      setSelectedChallengeId(null);
-    }
+    if (selectedChallengeId && !challenges[selectedChallengeId]) setSelectedChallengeId(null);
   }, [challenges, selectedChallengeId]);
 
-  const handleActivate = useCallback(() => {
+  // ── Action handlers ──
+  const handleAccept = useCallback(() => {
     if (!selectedChallenge || !teamId) return;
-    socket.emit('challenge:activate', { challengeId: selectedChallenge.id, teamId });
-    // Optimistic update handled by challenge:activated broadcast
+    emitAccept(selectedChallenge.id, teamId);
   }, [selectedChallenge, teamId]);
 
   const handleAbandon = useCallback(() => {
     if (!activeChallengeId || !teamId) return;
-    socket.emit('challenge:abandon', { challengeId: activeChallengeId, teamId });
-    // Optimistic update handled by challenge:abandoned broadcast
+    emitAbandon(activeChallengeId, teamId);
     setSelectedChallengeId(null);
   }, [activeChallengeId, teamId]);
 
-  const handleComplete = useCallback(() => {
+  const handleComplete = useCallback((count?: number) => {
     if (!activeChallengeId || !teamId) return;
     if (!confirm('Are you sure you completed this challenge?')) return;
-    socket.emit('challenge:complete', { challengeId: activeChallengeId, teamId });
+    emitComplete(activeChallengeId, teamId, count);
   }, [activeChallengeId, teamId]);
 
-  const inRange =
-    selectedChallenge && myPos
-      ? distanceMeters(myPos.lat, myPos.lng, selectedChallenge.lat, selectedChallenge.lng) <= selectedChallenge.proximityMeters
-      : false;
+  const handleSetWager = useCallback((amount: number) => {
+    if (!activeChallengeId || !teamId) return;
+    emitWager(activeChallengeId, teamId, amount);
+  }, [activeChallengeId, teamId]);
 
+  const handleFailWager = useCallback(() => {
+    if (!activeChallengeId || !teamId) return;
+    if (!confirm('Confirm: you failed this wager? Your tokens will be deducted.')) return;
+    emitFail(activeChallengeId, teamId);
+  }, [activeChallengeId, teamId]);
+
+  const distance = selectedChallenge && myPos
+    ? distanceMeters(myPos.lat, myPos.lng, selectedChallenge.lat, selectedChallenge.lng)
+    : null;
+  const inRange = selectedChallenge && distance != null
+    ? distance <= selectedChallenge.proximityMeters
+    : false;
   const isMyActive = selectedChallenge?.id === activeChallengeId;
+
+  // Description visibility: revealed when in range OR we've accepted this challenge.
+  const descriptionVisible = selectedChallenge != null &&
+    (inRange || isMyActive || acceptedLocally.has(selectedChallenge.id));
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100vh' }}>
@@ -222,8 +243,19 @@ export default function GamePage() {
 
       <GameHUD />
       <Leaderboard />
+      <Toast />
 
-      {/* Waiting banner when game hasn't started */}
+      {/* Tokens badge */}
+      {gameStatus === 'active' && (
+        <div style={{
+          position: 'absolute', top: 8, right: 16, background: 'rgba(26,26,46,0.9)',
+          color: 'white', borderRadius: 8, padding: '8px 14px', zIndex: 5,
+          fontWeight: 'bold',
+        }}>
+          {tokens} 🪙
+        </div>
+      )}
+
       {gameStatus !== 'active' && gameStatus !== 'ended' && Object.keys(challenges).length === 0 && (
         <div style={{
           position: 'absolute', bottom: 80, left: 0, right: 0,
@@ -234,94 +266,316 @@ export default function GamePage() {
       )}
 
       {selectedChallenge && (
-        <div
-          className="challenge-card"
-          style={{
-            position: 'absolute',
-            bottom: 24,
-            left: 16,
-            right: 16,
-            background: '#1a1a2e',
-            color: 'white',
-            borderRadius: 12,
-            padding: 16,
-            maxWidth: 400,
-            margin: '0 auto',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingRight: 32 }}>
-            <h3 style={{ margin: 0 }}>{selectedChallenge.name}</h3>
-            <span style={{ fontWeight: 'bold', color: '#f39c12', whiteSpace: 'nowrap' }}>{selectedChallenge.points} pts</span>
-          </div>
-
-          {isMyActive && <p style={{ marginTop: 8, opacity: 0.8 }}>{selectedChallenge.description}</p>}
-
-          {isMyActive ? (
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <button onClick={handleComplete} style={{ flex: 1, padding: '12px 10px', background: '#2ecc71', border: 'none', borderRadius: 6, color: 'white', fontWeight: 'bold', fontSize: 15 }}>
-                Mark Complete
-              </button>
-              <button onClick={handleAbandon} style={{ flex: 1, padding: '12px 10px', background: '#e74c3c', border: 'none', borderRadius: 6, color: 'white', fontSize: 15 }}>
-                Abandon
-              </button>
-            </div>
-          ) : activeChallengeId ? (
-            <p style={{ opacity: 0.6, marginTop: 8 }}>You already have an active challenge</p>
-          ) : inRange ? (
-            <button onClick={handleActivate} style={{ marginTop: 12, width: '100%', padding: '12px 10px', background: '#3498db', border: 'none', borderRadius: 6, color: 'white', fontWeight: 'bold', fontSize: 15 }}>
-              Set as Active
-            </button>
-          ) : (
-            <p style={{ opacity: 0.6, marginTop: 8 }}>
-              Get closer to activate ({myPos ? Math.round(distanceMeters(myPos.lat, myPos.lng, selectedChallenge.lat, selectedChallenge.lng)) + 'm away' : 'GPS loading...'})
-            </p>
-          )}
-
-          <button
-            onClick={() => setSelectedChallengeId(null)}
-            style={{ position: 'absolute', top: 4, right: 4, background: 'none', border: 'none', color: 'white', fontSize: 22, cursor: 'pointer', padding: '8px 12px', lineHeight: 1 }}
-          >
-            ×
-          </button>
-        </div>
+        <ChallengeCard
+          challenge={selectedChallenge}
+          descriptionVisible={descriptionVisible}
+          distance={distance}
+          inRange={inRange}
+          isMyActive={isMyActive}
+          activeChallengeId={activeChallengeId}
+          wagerAmount={wagerAmount}
+          tokens={tokens}
+          onClose={() => setSelectedChallengeId(null)}
+          onAccept={handleAccept}
+          onAbandon={handleAbandon}
+          onComplete={handleComplete}
+          onSetWager={handleSetWager}
+          onFailWager={handleFailWager}
+        />
       )}
     </div>
   );
 }
 
-/** Apply marker style — pie chart when teams are working on it */
+// ── Challenge card with type-specific flows ──
+
+interface ChallengeCardProps {
+  challenge: Challenge;
+  descriptionVisible: boolean;
+  distance: number | null;
+  inRange: boolean;
+  isMyActive: boolean;
+  activeChallengeId: string | null;
+  wagerAmount: number | null;
+  tokens: number;
+  onClose: () => void;
+  onAccept: () => void;
+  onAbandon: () => void;
+  onComplete: (count?: number) => void;
+  onSetWager: (amount: number) => void;
+  onFailWager: () => void;
+}
+
+function ChallengeCard(props: ChallengeCardProps) {
+  const {
+    challenge: c, descriptionVisible, distance, inRange, isMyActive,
+    activeChallengeId, wagerAmount, tokens,
+    onClose, onAccept, onAbandon, onComplete, onSetWager, onFailWager,
+  } = props;
+
+  const typeBadgeColor =
+    c.type === 'normal' ? '#3498db' : c.type === 'variable' ? '#2ecc71' : '#9b59b6';
+
+  return (
+    <div
+      className="challenge-card"
+      style={{
+        position: 'absolute', bottom: 24, left: 16, right: 16,
+        background: '#1a1a2e', color: 'white', borderRadius: 12, padding: 16,
+        maxWidth: 400, margin: '0 auto',
+      }}
+    >
+      <button
+        onClick={onClose}
+        style={{ position: 'absolute', top: 4, right: 4, background: 'none', border: 'none', color: 'white', fontSize: 22, cursor: 'pointer', padding: '8px 12px', lineHeight: 1 }}
+      >
+        ×
+      </button>
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', paddingRight: 32 }}>
+        <span style={{
+          fontSize: 10, fontWeight: 'bold', padding: '2px 8px', borderRadius: 10,
+          background: typeBadgeColor, letterSpacing: 1,
+        }}>
+          {c.type.toUpperCase()}
+        </span>
+        <h3 style={{ margin: 0, flex: 1 }}>{c.name}</h3>
+        <span style={{ fontWeight: 'bold', color: '#f39c12', whiteSpace: 'nowrap' }}>{rewardLabel(c)}</span>
+      </div>
+
+      {descriptionVisible
+        ? <p style={{ marginTop: 8, opacity: 0.85 }}>{c.description}</p>
+        : <p style={{ marginTop: 8, opacity: 0.5, fontStyle: 'italic' }}>Get closer to reveal the challenge…</p>
+      }
+
+      {/* Actions */}
+      {isMyActive
+        ? <ActiveActions
+            challenge={c}
+            wagerAmount={wagerAmount}
+            tokens={tokens}
+            onAbandon={onAbandon}
+            onComplete={onComplete}
+            onSetWager={onSetWager}
+            onFailWager={onFailWager}
+          />
+        : activeChallengeId
+          ? <p style={{ opacity: 0.6, marginTop: 8 }}>You already have an active challenge</p>
+          : inRange
+            ? <button
+                onClick={onAccept}
+                style={{ marginTop: 12, width: '100%', padding: '12px 10px', background: '#3498db', border: 'none', borderRadius: 6, color: 'white', fontWeight: 'bold', fontSize: 15 }}
+              >
+                Accept
+              </button>
+            : <p style={{ opacity: 0.6, marginTop: 8 }}>
+                {distance != null ? `${Math.round(distance)}m away — get closer to accept` : 'GPS loading…'}
+              </p>
+      }
+    </div>
+  );
+}
+
+function ActiveActions(props: {
+  challenge: Challenge;
+  wagerAmount: number | null;
+  tokens: number;
+  onAbandon: () => void;
+  onComplete: (count?: number) => void;
+  onSetWager: (amount: number) => void;
+  onFailWager: () => void;
+}) {
+  const { challenge, wagerAmount, tokens, onAbandon, onComplete, onSetWager, onFailWager } = props;
+
+  if (challenge.type === 'normal') {
+    return (
+      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+        <button
+          onClick={() => onComplete()}
+          style={{ flex: 1, padding: '12px 10px', background: '#2ecc71', border: 'none', borderRadius: 6, color: 'white', fontWeight: 'bold', fontSize: 15 }}
+        >
+          Claim ({challenge.tokens})
+        </button>
+        <button
+          onClick={onAbandon}
+          style={{ flex: 1, padding: '12px 10px', background: '#e74c3c', border: 'none', borderRadius: 6, color: 'white', fontSize: 15 }}
+        >
+          Abandon
+        </button>
+      </div>
+    );
+  }
+
+  if (challenge.type === 'variable') {
+    return <VariableActions challenge={challenge} onComplete={onComplete} onAbandon={onAbandon} />;
+  }
+
+  // Wager
+  if (wagerAmount == null) {
+    return <WagerSetup tokens={tokens} onSetWager={onSetWager} onAbandon={onAbandon} />;
+  }
+  return (
+    <div style={{ marginTop: 12 }}>
+      <p style={{ opacity: 0.8, margin: '0 0 8px 0' }}>
+        You wagered <strong>{wagerAmount}</strong> tokens.
+      </p>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          onClick={() => onComplete()}
+          style={{ flex: 1, padding: '12px 10px', background: '#2ecc71', border: 'none', borderRadius: 6, color: 'white', fontWeight: 'bold', fontSize: 15 }}
+        >
+          Pass (+{wagerAmount * 2})
+        </button>
+        <button
+          onClick={onFailWager}
+          style={{ flex: 1, padding: '12px 10px', background: '#e74c3c', border: 'none', borderRadius: 6, color: 'white', fontSize: 15 }}
+        >
+          Fail (−{wagerAmount})
+        </button>
+      </div>
+      <p style={{ opacity: 0.5, fontSize: 12, marginTop: 8, textAlign: 'center' }}>
+        Wager is locked — no abandon.
+      </p>
+    </div>
+  );
+}
+
+function VariableActions({
+  challenge, onComplete, onAbandon,
+}: {
+  challenge: Challenge;
+  onComplete: (count?: number) => void;
+  onAbandon: () => void;
+}) {
+  const [count, setCount] = useState(1);
+  return (
+    <div style={{ marginTop: 12 }}>
+      <label style={{ fontSize: 13, opacity: 0.8, display: 'block', marginBottom: 6 }}>
+        How many {challenge.unitLabel}{count === 1 ? '' : 's'}?
+      </label>
+      <input
+        type="number"
+        min={1}
+        value={count}
+        onChange={(e) => setCount(Math.max(1, Number(e.target.value) || 1))}
+        style={{ width: '100%', padding: 8, background: '#2a2a3e', color: 'white', border: '1px solid #444', borderRadius: 4, fontSize: 16, boxSizing: 'border-box' }}
+      />
+      <div style={{ opacity: 0.7, fontSize: 13, margin: '8px 0' }}>
+        = {count * (challenge.tokensPerUnit ?? 0)} tokens
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          onClick={() => onComplete(count)}
+          style={{ flex: 1, padding: '12px 10px', background: '#2ecc71', border: 'none', borderRadius: 6, color: 'white', fontWeight: 'bold', fontSize: 15 }}
+        >
+          Claim
+        </button>
+        <button
+          onClick={onAbandon}
+          style={{ flex: 1, padding: '12px 10px', background: '#e74c3c', border: 'none', borderRadius: 6, color: 'white', fontSize: 15 }}
+        >
+          Abandon
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function WagerSetup({
+  tokens, onSetWager, onAbandon,
+}: {
+  tokens: number;
+  onSetWager: (amount: number) => void;
+  onAbandon: () => void;
+}) {
+  const max = Math.max(1, tokens);
+  const [amount, setAmount] = useState(Math.min(10, max));
+  const canWager = tokens >= 1;
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      {canWager ? (
+        <>
+          <label style={{ fontSize: 13, opacity: 0.8, display: 'block', marginBottom: 6 }}>
+            Wager amount (max {tokens})
+          </label>
+          <input
+            type="range"
+            min={1}
+            max={max}
+            value={amount}
+            onChange={(e) => setAmount(Number(e.target.value))}
+            style={{ width: '100%' }}
+          />
+          <div style={{ textAlign: 'center', fontSize: 24, fontWeight: 'bold', margin: '4px 0' }}>
+            {amount}
+          </div>
+          <div style={{ opacity: 0.6, fontSize: 12, textAlign: 'center', margin: '0 0 10px 0' }}>
+            Pass: +{amount * 2} · Fail: −{amount}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={() => onSetWager(amount)}
+              style={{ flex: 1, padding: '12px 10px', background: '#9b59b6', border: 'none', borderRadius: 6, color: 'white', fontWeight: 'bold', fontSize: 15 }}
+            >
+              Lock in wager
+            </button>
+            <button
+              onClick={onAbandon}
+              style={{ flex: 1, padding: '12px 10px', background: '#e74c3c', border: 'none', borderRadius: 6, color: 'white', fontSize: 15 }}
+            >
+              Abandon
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p style={{ opacity: 0.7, margin: '0 0 8px 0' }}>
+            You need at least 1 token to wager.
+          </p>
+          <button
+            onClick={onAbandon}
+            style={{ width: '100%', padding: '12px 10px', background: '#e74c3c', border: 'none', borderRadius: 6, color: 'white', fontSize: 15 }}
+          >
+            Abandon
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function applyMarkerStyle(
   el: HTMLElement,
   challenge: Challenge,
   activeChallengeId: string | null,
-  teamId: string | null,
   teamsOnIt: TeamSnapshot[],
 ) {
-  el.style.width = '20px';
-  el.style.height = '20px';
+  el.style.width = '22px';
+  el.style.height = '22px';
   el.style.borderRadius = '50%';
   el.style.cursor = 'pointer';
 
+  const typeColor =
+    challenge.type === 'normal'   ? '#3498db' :
+    challenge.type === 'variable' ? '#2ecc71' : '#9b59b6';
+
   if (challenge.id === activeChallengeId) {
-    // Our active challenge — highlighted
     el.style.border = '3px solid white';
-    el.style.boxShadow = '0 0 10px #3498db';
-    el.style.opacity = '1';
+    el.style.boxShadow = `0 0 10px ${typeColor}`;
   } else {
     el.style.border = '2px solid white';
     el.style.boxShadow = 'none';
-    el.style.opacity = '1';
   }
+  el.style.opacity = '1';
 
   if (teamsOnIt.length > 0) {
-    // Pie chart: conic gradient with team colors
     const sliceAngle = 360 / teamsOnIt.length;
     const stops = teamsOnIt.map((t, i) =>
-      `${t.color} ${i * sliceAngle}deg ${(i + 1) * sliceAngle}deg`
+      `${t.color} ${i * sliceAngle}deg ${(i + 1) * sliceAngle}deg`,
     ).join(', ');
     el.style.background = `conic-gradient(${stops})`;
   } else {
-    // Default orange pin
-    el.style.background = '#f39c12';
+    el.style.background = typeColor;
   }
 }

@@ -1,16 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-
-interface TeamResult {
-  id: string;
-  name: string;
-  color: string;
-  score: number;
-}
+import type { Team } from '@t4al/shared';
 
 export default function EndPage() {
   const { gameId } = useParams<{ gameId: string }>();
-  const [teams, setTeams] = useState<TeamResult[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [gameName, setGameName] = useState('');
 
   useEffect(() => {
@@ -20,8 +14,10 @@ export default function EndPage() {
       .catch(() => {});
     fetch(`/api/games/${gameId}/teams`)
       .then((r) => r.ok ? r.json() : [])
-      .then((rows: TeamResult[]) => {
-        if (Array.isArray(rows)) setTeams(rows.sort((a, b) => b.score - a.score));
+      .then((rows: Team[]) => {
+        if (Array.isArray(rows)) {
+          setTeams([...rows].sort((a, b) => b.tokens - a.tokens || a.name.localeCompare(b.name)));
+        }
       })
       .catch(() => {});
   }, [gameId]);
@@ -36,11 +32,8 @@ export default function EndPage() {
         <div
           key={team.id}
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '12px 16px',
-            marginBottom: 8,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '12px 16px', marginBottom: 8,
             background: i === 0 ? 'rgba(243, 156, 18, 0.2)' : 'rgba(255,255,255,0.05)',
             borderRadius: 8,
             border: i === 0 ? '2px solid #f39c12' : '1px solid rgba(255,255,255,0.1)',
@@ -51,7 +44,7 @@ export default function EndPage() {
             <span style={{ width: 16, height: 16, borderRadius: '50%', background: team.color }} />
             <span style={{ fontWeight: 'bold', fontSize: 18 }}>{team.name}</span>
           </div>
-          <span style={{ fontSize: 20, fontWeight: 'bold' }}>{team.score} pts</span>
+          <span style={{ fontSize: 20, fontWeight: 'bold' }}>{team.tokens} 🪙</span>
         </div>
       ))}
 
