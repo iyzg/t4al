@@ -190,13 +190,14 @@ export default function GamePage() {
         const chip = el.querySelector('.pin-chip') as HTMLElement | null;
         if (chip) {
           chip.classList.remove('pin-pop');
-          // force reflow so repeated clicks re-trigger the animation
-          chip.getBoundingClientRect();
+          chip.getBoundingClientRect(); // force reflow so repeated clicks re-trigger
           chip.classList.add('pin-pop');
         }
         setSelectedChallengeId(c.id);
       });
-      const marker = new maplibregl.Marker({ element: el }).setLngLat([c.lng, c.lat]).addTo(map);
+      const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+        .setLngLat([c.lng, c.lat])
+        .addTo(map);
       markersRef.current.set(c.id, marker);
     });
   }, [challenges, activeChallengeId, teamSnapshots, game?.challengeExpireMinutes]);
@@ -674,14 +675,21 @@ function LobbyBanner() {
 }
 
 // ── Pin construction ──────────────────────────────────────────────────────
-// Each pin is an outer 44×44 div (positioned by MapLibre) containing:
-//   1. Timer arc SVG — thin orange ring outside the chip; arc length = % of
-//      time remaining until the challenge expires. Pointer-events: none so
-//      clicks pass through to the chip.
-//   2. Chip SVG — solid orange circle with a white border. Wager chips get a
-//      dashed/notched border that reads like a casino chip. This element is
-//      what scales on click (class `pin-chip`).
+// Each pin is an outer 32×32 div (positioned by MapLibre, anchor=center)
+// containing two SVGs that share the same center point:
+//   1. Timer arc SVG (r=14, stroke 2) — thin orange ring just outside the
+//      chip; arc length = % time remaining. Pointer-events: none so clicks
+//      pass through to the chip.
+//   2. Chip SVG (r=11) — solid orange circle with a white border. Wager
+//      chips get a dashed/notched border that reads like a casino chip.
+//      This is what scales on click (class `pin-chip`).
+//
+// display:block on every element keeps the outer box exactly 32×32 so
+// MapLibre's center-anchor offset math stays stable across zooms.
 const SVG_NS = 'http://www.w3.org/2000/svg';
+const PIN_OUTER = 32;
+const PIN_HALF  = PIN_OUTER / 2;
+const ARC_R     = 14;
 
 function createPinElement(
   c: Challenge,
@@ -689,14 +697,14 @@ function createPinElement(
   expireMinutes: number,
 ): HTMLElement {
   const outer = document.createElement('div');
-  outer.style.cssText = 'width:44px;height:44px;cursor:pointer;position:relative;';
+  outer.style.cssText =
+    `width:${PIN_OUTER}px;height:${PIN_OUTER}px;cursor:pointer;position:relative;display:block;`;
 
-  // Timer arc at r=18 (outside the chip at r=11)
   const ringSvg = document.createElementNS(SVG_NS, 'svg');
-  ringSvg.setAttribute('width', '44');
-  ringSvg.setAttribute('height', '44');
-  ringSvg.setAttribute('viewBox', '-22 -22 44 44');
-  ringSvg.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+  ringSvg.setAttribute('width', String(PIN_OUTER));
+  ringSvg.setAttribute('height', String(PIN_OUTER));
+  ringSvg.setAttribute('viewBox', `-${PIN_HALF} -${PIN_HALF} ${PIN_OUTER} ${PIN_OUTER}`);
+  ringSvg.style.cssText = 'position:absolute;inset:0;pointer-events:none;display:block;';
 
   const activatedMs = c.activatedAt ? new Date(c.activatedAt).getTime() : Date.now();
   const totalMs    = expireMinutes * 60_000;
@@ -706,10 +714,10 @@ function createPinElement(
   arc.setAttribute('class', 'timer-arc');
   arc.setAttribute('cx', '0');
   arc.setAttribute('cy', '0');
-  arc.setAttribute('r', '18');
+  arc.setAttribute('r', String(ARC_R));
   arc.setAttribute('fill', 'none');
   arc.setAttribute('stroke', CHALLENGE_COLOR);
-  arc.setAttribute('stroke-width', '2.5');
+  arc.setAttribute('stroke-width', '2');
   arc.setAttribute('stroke-linecap', 'round');
   arc.setAttribute('pathLength', '100');
   arc.setAttribute('stroke-dasharray', `${pctRemain} 100`);
@@ -719,7 +727,6 @@ function createPinElement(
   ringSvg.appendChild(arc);
   outer.appendChild(ringSvg);
 
-  // Chip SVG — centered inside outer
   const chipSvg = document.createElementNS(SVG_NS, 'svg');
   chipSvg.classList.add('pin-chip');
   chipSvg.setAttribute('width', '26');
@@ -727,7 +734,7 @@ function createPinElement(
   chipSvg.setAttribute('viewBox', '-13 -13 26 26');
   chipSvg.style.cssText =
     'position:absolute;left:50%;top:50%;margin-left:-13px;margin-top:-13px;' +
-    'transform-origin:center center;';
+    'transform-origin:center center;display:block;';
   outer.appendChild(chipSvg);
 
   renderChipSvg(chipSvg, c, activeChallengeId);
