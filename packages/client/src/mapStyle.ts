@@ -3,13 +3,17 @@ import type maplibregl from 'maplibre-gl';
 export const CHICAGO_CENTER: [number, number] = [-87.6298, 41.8827];
 export const DEFAULT_ZOOM = 15;
 
+// Landuse kinds that should render as green parks.
+const PARK_KINDS = [
+  'park', 'grass', 'forest', 'nature_reserve', 'protected_area',
+  'recreation_ground', 'playground', 'cemetery', 'garden', 'meadow',
+];
+
 export function getMapStyle(): maplibregl.StyleSpecification {
   const src = 'chicago';
   return {
     version: 8,
-    // Glyph pack for symbol/text layers. Protomaps hosts a small fontstack
-    // (Noto Sans, Noto Sans Italic, Roboto Mono). Sora is not in that set —
-    // see note at the bottom of this file for how to swap to Sora.
+    // Glyph pack for symbol/text layers.
     glyphs: 'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf',
     sources: {
       [src]: {
@@ -23,21 +27,29 @@ export function getMapStyle(): maplibregl.StyleSpecification {
       { id: 'earth', type: 'fill', source: src, 'source-layer': 'earth',
         paint: { 'fill-color': '#f0ebe3' } },
 
-      // ── parks / green spaces — more visible ──
-      { id: 'landcover', type: 'fill', source: src, 'source-layer': 'landcover',
-        paint: { 'fill-color': '#dbe5ca', 'fill-opacity': 0.9 } },
-      { id: 'landuse', type: 'fill', source: src, 'source-layer': 'landuse',
+      // ── parks / green spaces (split off landuse by kind) ──
+      { id: 'parks', type: 'fill', source: src, 'source-layer': 'landuse',
+        filter: ['in', 'kind', ...PARK_KINDS],
+        paint: { 'fill-color': '#c5d9a0', 'fill-opacity': 0.9 } },
+
+      // ── non-green landuse — subtle ──
+      { id: 'landuse-other', type: 'fill', source: src, 'source-layer': 'landuse',
+        filter: ['!in', 'kind', ...PARK_KINDS],
         paint: { 'fill-color': '#e8e4da', 'fill-opacity': 0.5 } },
+
+      // ── landcover — also subtle (farmland, ice, sand, etc.) ──
+      { id: 'landcover', type: 'fill', source: src, 'source-layer': 'landcover',
+        paint: { 'fill-color': '#dee4d0', 'fill-opacity': 0.5 } },
 
       // ── water ──
       { id: 'water', type: 'fill', source: src, 'source-layer': 'water',
         paint: { 'fill-color': '#bdd5e8' } },
 
-      // ── buildings — warmer, slightly darker ──
+      // ── buildings — warm, slightly darker ──
       { id: 'buildings', type: 'fill', source: src, 'source-layer': 'buildings',
         paint: { 'fill-color': '#d4c7aa', 'fill-opacity': 0.9 } },
 
-      // ── roads — stronger hierarchy; minor → major → highway in darkening + widening ──
+      // ── roads — minor → major → highway ──
       { id: 'roads-minor', type: 'line', source: src, 'source-layer': 'roads',
         filter: ['all', ['!in', 'kind', 'highway', 'major_road', 'rail']],
         paint: { 'line-color': '#d8d2c8', 'line-width': 0.8 } },
@@ -48,12 +60,18 @@ export function getMapStyle(): maplibregl.StyleSpecification {
         filter: ['==', 'kind', 'highway'],
         paint: { 'line-color': '#9e9684', 'line-width': 1.6 } },
 
-      // ── transit — distinct cooler gray, still thin ──
+      // ── transit ──
       { id: 'rail', type: 'line', source: src, 'source-layer': 'roads',
         filter: ['==', 'kind', 'rail'],
         paint: { 'line-color': '#9a9183', 'line-width': 1 } },
 
-      // ── street labels — subtle, only for majors/highways at zoom 14+ ──
+      // ── street labels — sparse, only at close zoom ──
+      //
+      // Dense-label fix: previously labels appeared on every road segment at
+      // zoom 14+, creating the "repeated name" effect. Here we show only
+      // highways/major roads at zoom 16+, with generous symbol-spacing and
+      // no letter-spacing (which was amplifying the halos between glyphs
+      // into a dash-like artifact).
       {
         id: 'roads-labels',
         type: 'symbol',
@@ -63,21 +81,20 @@ export function getMapStyle(): maplibregl.StyleSpecification {
           ['in', 'kind', 'highway', 'major_road'],
           ['has', 'name'],
         ],
-        minzoom: 14,
+        minzoom: 16,
         layout: {
           'text-field': ['get', 'name'],
-          // Protomaps-hosted font. Swap to Sora once SDF glyphs are generated
-          // (see note at the bottom of this file).
-          'text-font': ['Noto Sans Medium'],
-          'text-size': 10.5,
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 11,
           'symbol-placement': 'line',
-          'text-padding': 4,
-          'text-letter-spacing': 0.04,
+          'symbol-spacing': 400,
+          'text-padding': 6,
+          'text-max-angle': 30,
         },
         paint: {
           'text-color':      '#7a6e5c',
           'text-halo-color': '#f5f0e8',
-          'text-halo-width': 1.2,
+          'text-halo-width': 0.8,
         },
       },
     ],
@@ -87,17 +104,15 @@ export function getMapStyle(): maplibregl.StyleSpecification {
 // ──────────────────────────────────────────────────────────────────────────
 // Note on Sora as map labels
 //
-// MapLibre GL renders map text from signed-distance-field (SDF) glyph packs,
-// not CSS-loaded fonts. The global Sora we load via Google Fonts in index.html
-// works for HTML UI but does nothing for the map canvas.
+// MapLibre renders map text from SDF glyph packs, not CSS-loaded fonts, so
+// the Sora we load via Google Fonts for HTML UI can't be used here.
 //
-// To use Sora on the map we'd need to:
-//   1. `npx fontnik build-glyphs node_modules/@fontsource/sora/files/sora-latin-400-normal.woff2 public/glyphs/Sora\ Regular/`
-//      (or generate from the TTF)
-//   2. Also build Sora\ Medium and Sora\ SemiBold into public/glyphs/
-//   3. Change `glyphs:` above to: `/glyphs/{fontstack}/{range}.pbf`
-//   4. Change `text-font` to `['Sora Medium']`
+// To swap to Sora:
+//   1. npx fontnik build-glyphs path/to/Sora-Regular.ttf public/glyphs/Sora\ Regular/
+//      (also build Sora Medium + SemiBold if you want weight options)
+//   2. Change the top-level `glyphs:` URL to `/glyphs/{fontstack}/{range}.pbf`
+//   3. Change the `text-font` in roads-labels to `['Sora Medium']` (or whatever)
 //
-// For now we use Protomaps' hosted Noto Sans — similar geometric sans
-// feel. Swap in Sora when you want the step.
+// For now we use Protomaps-hosted Noto Sans Regular — geometric sans, reads
+// similar in feel to Sora.
 // ──────────────────────────────────────────────────────────────────────────
