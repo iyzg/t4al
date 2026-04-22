@@ -198,19 +198,6 @@ export default function GamePage() {
       const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
         .setLngLat([c.lng, c.lat])
         .addTo(map);
-
-      // DRIFT DIAGNOSTIC — remove once we've confirmed the root cause.
-      // Vanilla 8×8 black dot marker at the exact same lat/lng. If my chip
-      // and this dot stay visually coincident while zooming, my pin is
-      // correctly positioned and MapLibre is doing its job. If they
-      // separate, the bug is in my SVG.
-      const dbg = document.createElement('div');
-      dbg.style.cssText =
-        'width:8px;height:8px;background:#000;border:2px solid #fff;' +
-        'border-radius:50%;box-sizing:content-box;';
-      new maplibregl.Marker({ element: dbg, anchor: 'center' })
-        .setLngLat([c.lng, c.lat])
-        .addTo(map);
       markersRef.current.set(c.id, marker);
     });
   }, [challenges, activeChallengeId, teamSnapshots, game?.challengeExpireMinutes]);
@@ -705,17 +692,15 @@ function createPinElement(
   expireMinutes: number,
 ): HTMLElement {
   const outer = document.createElement('div');
+  // IMPORTANT: do NOT set `position` inline. MapLibre's .maplibregl-marker
+  // class sets position:absolute; overriding it with position:relative puts
+  // every marker back in document flow, so subsequent markers get a flow
+  // offset equal to the accumulated block height of prior markers (the
+  // first marker reads 0, the second reads PIN_OUTER, etc.), which shows
+  // up as a drifting vertical offset that was baffling us.
   outer.style.cssText =
     `width:${PIN_OUTER}px;height:${PIN_OUTER}px;cursor:pointer;` +
-    `position:relative;display:block;line-height:0;` +
-    // DIAGNOSTIC: blue outline shows the element's CSS bounding box, cyan
-    // crosshair shows its computed center. Compare vs the black dot +
-    // orange chip to see where the discrepancy lives.
-    `outline:1px dashed #00f;outline-offset:-1px;` +
-    `background:` +
-    `radial-gradient(circle at center, rgba(0,255,255,0.5) 0 1.5px, transparent 2px),` +
-    `linear-gradient(to right, transparent calc(50% - 0.5px), rgba(0,255,255,0.3) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),` +
-    `linear-gradient(to bottom, transparent calc(50% - 0.5px), rgba(0,255,255,0.3) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px));`;
+    `display:block;line-height:0;`;
 
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('width', String(PIN_OUTER));
