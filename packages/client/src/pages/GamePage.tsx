@@ -179,13 +179,30 @@ export default function GamePage() {
       const existing = markersRef.current.get(c.id);
       if (existing) {
         existing.setLngLat([c.lng, c.lat]);
-        applyMarkerStyle(existing.getElement(), c, activeChallengeId, teamsOnIt);
+        const visual = existing.getElement().firstChild as HTMLElement;
+        applyMarkerStyle(visual, c, activeChallengeId, teamsOnIt);
         return;
       }
+      // Outer el is positioned by MapLibre via transform: translate(...).
+      // Inner `visual` holds the circle + styles + animation, so our
+      // scale-on-click transform doesn't collide with MapLibre's.
       const el = document.createElement('div');
-      applyMarkerStyle(el, c, activeChallengeId, teamsOnIt);
+      el.style.width = '22px';
+      el.style.height = '22px';
+      el.style.cursor = 'pointer';
+      const visual = document.createElement('div');
+      visual.style.width = '100%';
+      visual.style.height = '100%';
+      visual.style.transformOrigin = 'center center';
+      el.appendChild(visual);
+
+      applyMarkerStyle(visual, c, activeChallengeId, teamsOnIt);
       el.addEventListener('click', (e) => {
         e.stopPropagation();
+        // Remove + reflow + re-add so repeated clicks re-trigger the animation
+        visual.classList.remove('pin-pop');
+        void visual.offsetWidth;
+        visual.classList.add('pin-pop');
         setSelectedChallengeId(c.id);
       });
       const marker = new maplibregl.Marker({ element: el }).setLngLat([c.lng, c.lat]).addTo(map);
@@ -590,22 +607,22 @@ function TeamStack({ teams }: { teams: TeamSnapshot[] }) {
   );
 }
 
-// Shows the current player's rank and token balance, styled like the clock pill
-// and placed directly beneath it.
+// Shows the current player's rank, styled like the clock pill and placed
+// directly beneath it.
 function MyRankPill({
-  teams, myTeamId, myColor, myTokens,
+  teams, myTeamId, myColor,
 }: {
   teams: TeamSnapshot[];
   myTeamId: string | null;
   myColor: string | null;
-  myTokens: number;
+  myTokens: number;       // still accepted for API stability; no longer rendered
 }) {
   const ranked = rankedTeams(teams);
   const mine = myTeamId ? ranked.find((r) => r.team.id === myTeamId) : null;
   if (!mine) return null;
   return (
     <div
-      title="Your team rank and tokens"
+      title="Your team rank"
       style={{
         background: '#0b0f1a',
         color: 'white',
@@ -621,7 +638,7 @@ function MyRankPill({
         background: myColor ?? mine.team.color,
       }} />
       <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-        #{mine.rank}, {myTokens}
+        #{mine.rank}
       </span>
     </div>
   );
