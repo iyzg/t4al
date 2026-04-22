@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import maplibregl from 'maplibre-gl';
-import { getMapStyle, CHICAGO_CENTER } from '../mapStyle';
+import { getMapStyle, CHICAGO_CENTER, CHICAGO_BOUNDS, MIN_ZOOM, MAX_ZOOM } from '../mapStyle';
 import { ensurePmtilesProtocol } from '../mapSetup';
 import type { Challenge, ChallengeType } from '@t4al/shared';
 
@@ -143,6 +143,9 @@ export default function AdminSetupPage() {
         style: getMapStyle(),
         center: CHICAGO_CENTER,
         zoom: 15,
+        minZoom: MIN_ZOOM,
+        maxZoom: MAX_ZOOM,
+        maxBounds: CHICAGO_BOUNDS,
       });
 
       map.on('load', () => {

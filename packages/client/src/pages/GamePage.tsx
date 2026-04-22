@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import maplibregl from 'maplibre-gl';
-import { getMapStyle, CHICAGO_CENTER, DEFAULT_ZOOM } from '../mapStyle';
+import { getMapStyle, CHICAGO_CENTER, CHICAGO_BOUNDS, DEFAULT_ZOOM, MIN_ZOOM, MAX_ZOOM } from '../mapStyle';
 import { ensurePmtilesProtocol } from '../mapSetup';
 import { useGameStore, getOrCreateDeviceId } from '../store';
 import { socket } from '../socket';
@@ -131,6 +131,9 @@ export default function GamePage() {
         style: getMapStyle(),
         center: CHICAGO_CENTER,
         zoom: DEFAULT_ZOOM,
+        minZoom: MIN_ZOOM,
+        maxZoom: MAX_ZOOM,
+        maxBounds: CHICAGO_BOUNDS,
       });
       mapRef.current = map;
       return () => {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import maplibregl from 'maplibre-gl';
-import { getMapStyle, CHICAGO_CENTER } from '../mapStyle';
+import { getMapStyle, CHICAGO_CENTER, CHICAGO_BOUNDS, MIN_ZOOM, MAX_ZOOM } from '../mapStyle';
 import { ensurePmtilesProtocol } from '../mapSetup';
 import { socket } from '../socket';
 import { useGameStore } from '../store';
@@ -118,6 +118,9 @@ export default function AdminLivePage() {
         style: getMapStyle(),
         center: CHICAGO_CENTER,
         zoom: 14,
+        minZoom: MIN_ZOOM,
+        maxZoom: MAX_ZOOM,
+        maxBounds: CHICAGO_BOUNDS,
       });
       mapRef.current = map;
       return () => { map.remove(); mapRef.current = null; };

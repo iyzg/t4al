@@ -3,6 +3,16 @@ import type maplibregl from 'maplibre-gl';
 export const CHICAGO_CENTER: [number, number] = [-87.6298, 41.8827];
 export const DEFAULT_ZOOM = 15;
 
+// Pan + zoom limits. The PMTiles file only contains Chicago tiles; panning
+// or zooming past these bounds shows empty tiles (jank). These numbers are
+// a tight box around the Loop + near neighborhoods where the game is played.
+export const CHICAGO_BOUNDS: [[number, number], [number, number]] = [
+  [-87.80, 41.76],  // SW (west of the river, Bronzeville-ish)
+  [-87.50, 41.98],  // NE (east into the lake, Lincoln Park / Lakeview)
+];
+export const MIN_ZOOM = 12;   // zoomed-out limit — all of the Loop still fits
+export const MAX_ZOOM = 19;   // zoom-in limit — block level
+
 // Landuse kinds that should render as green parks.
 const PARK_KINDS = [
   'park', 'grass', 'forest', 'nature_reserve', 'protected_area',
