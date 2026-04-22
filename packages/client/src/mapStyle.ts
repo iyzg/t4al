@@ -62,24 +62,53 @@ export function getMapStyle(): maplibregl.StyleSpecification {
         paint: { 'fill-color': '#bdd5e8' } },
 
       // ── buildings — warm, slightly darker ──
+      // Buildings exist only at z≥13 in the protomaps schema. Fade their
+      // opacity in across z=12.5→13.5 to avoid the "pop-in" on zoom cross.
       { id: 'buildings', type: 'fill', source: src, 'source-layer': 'buildings',
-        paint: { 'fill-color': '#d4c7aa', 'fill-opacity': 0.9 } },
+        paint: {
+          'fill-color': '#d4c7aa',
+          'fill-opacity': ['interpolate', ['linear'], ['zoom'],
+            12.5, 0,
+            13.5, 0.9,
+          ],
+        },
+      },
 
-      // ── roads — minor → major → highway ──
+      // ── roads — minor → major → highway, widths interpolated by zoom ──
+      // Each road line-width grows smoothly as you zoom in, instead of
+      // being a fixed pixel value. Minor roads also fade in across
+      // z=11.5→12.5 so they don't pop in at their z=12 min_zoom.
       { id: 'roads-minor', type: 'line', source: src, 'source-layer': 'roads',
         filter: ['all', ['!in', 'kind', 'highway', 'major_road', 'rail']],
-        paint: { 'line-color': '#d8d2c8', 'line-width': 0.8 } },
+        paint: {
+          'line-color': '#d8d2c8',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 12, 0.4, 16, 1.2],
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 11.5, 0, 12.5, 1],
+        },
+      },
       { id: 'roads-major', type: 'line', source: src, 'source-layer': 'roads',
         filter: ['==', 'kind', 'major_road'],
-        paint: { 'line-color': '#bdb6aa', 'line-width': 1.2 } },
+        paint: {
+          'line-color': '#bdb6aa',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 10, 0.6, 16, 1.8],
+        },
+      },
       { id: 'roads-highway', type: 'line', source: src, 'source-layer': 'roads',
         filter: ['==', 'kind', 'highway'],
-        paint: { 'line-color': '#9e9684', 'line-width': 1.6 } },
+        paint: {
+          'line-color': '#9e9684',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 10, 0.8, 16, 2.4],
+        },
+      },
 
       // ── transit ──
       { id: 'rail', type: 'line', source: src, 'source-layer': 'roads',
         filter: ['==', 'kind', 'rail'],
-        paint: { 'line-color': '#9a9183', 'line-width': 1 } },
+        paint: {
+          'line-color': '#9a9183',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 12, 0.6, 16, 1.4],
+        },
+      },
 
       // ── street labels — sparse, only at close zoom ──
       //
@@ -111,6 +140,8 @@ export function getMapStyle(): maplibregl.StyleSpecification {
           'text-color':      '#7a6e5c',
           'text-halo-color': '#f5f0e8',
           'text-halo-width': 0.8,
+          // Fade labels in over half a zoom level so they don't pop at z=16
+          'text-opacity': ['interpolate', ['linear'], ['zoom'], 15.5, 0, 16.5, 1],
         },
       },
     ],
