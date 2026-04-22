@@ -198,6 +198,19 @@ export default function GamePage() {
       const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
         .setLngLat([c.lng, c.lat])
         .addTo(map);
+
+      // DRIFT DIAGNOSTIC — remove once we've confirmed the root cause.
+      // Vanilla 8×8 black dot marker at the exact same lat/lng. If my chip
+      // and this dot stay visually coincident while zooming, my pin is
+      // correctly positioned and MapLibre is doing its job. If they
+      // separate, the bug is in my SVG.
+      const dbg = document.createElement('div');
+      dbg.style.cssText =
+        'width:8px;height:8px;background:#000;border:2px solid #fff;' +
+        'border-radius:50%;box-sizing:content-box;';
+      new maplibregl.Marker({ element: dbg, anchor: 'center' })
+        .setLngLat([c.lng, c.lat])
+        .addTo(map);
       markersRef.current.set(c.id, marker);
     });
   }, [challenges, activeChallengeId, teamSnapshots, game?.challengeExpireMinutes]);
@@ -714,7 +727,7 @@ function createPinElement(
   arc.setAttribute('r', String(ARC_R));
   arc.setAttribute('fill', 'none');
   arc.setAttribute('stroke', CHALLENGE_COLOR);
-  arc.setAttribute('stroke-width', '2');
+  arc.setAttribute('stroke-width', '3');
   arc.setAttribute('stroke-linecap', 'round');
   arc.setAttribute('pathLength', '100');
   arc.setAttribute('stroke-dasharray', `${pctRemain} 100`);
