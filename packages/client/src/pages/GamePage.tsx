@@ -198,6 +198,17 @@ export default function GamePage() {
       const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
         .setLngLat([c.lng, c.lat])
         .addTo(map);
+
+      // Temporary diagnostic: black dot at the exact lat/lng. Confirms
+      // my chip's visible center is coincident with MapLibre's anchor
+      // point across all zooms. Remove once verified.
+      const dbg = document.createElement('div');
+      dbg.style.cssText =
+        'width:8px;height:8px;background:#000;border:2px solid #fff;' +
+        'border-radius:50%;box-sizing:content-box;';
+      new maplibregl.Marker({ element: dbg, anchor: 'center' })
+        .setLngLat([c.lng, c.lat])
+        .addTo(map);
       markersRef.current.set(c.id, marker);
     });
   }, [challenges, activeChallengeId, teamSnapshots, game?.challengeExpireMinutes]);
