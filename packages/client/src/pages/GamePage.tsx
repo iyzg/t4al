@@ -675,26 +675,16 @@ function LobbyBanner() {
 }
 
 // ── Pin construction ──────────────────────────────────────────────────────
-// Each pin is an outer 34×34 div (positioned by MapLibre, anchor=center).
-// The sizes match the figma design: 23×23 chip, 31×31 ring (3px gap).
+// Single 34×34 SVG inside a sized div. The SVG's viewBox is centered on
+// (0,0), and every shape (timer arc, chip circle, chip border) is drawn at
+// (0,0) — no CSS offsets or nested positioned containers, so there's no
+// box-model math that can drift under MapLibre's subpixel translate on zoom.
 //
-// Structure:
-//   outer (34×34, positioned by MapLibre)
-//   ├── ringSvg (absolute, inset:0 — fills outer)
-//   └── chipWrap (absolute, translated to center)
-//       └── chipSvg  (class `pin-chip`, scales on click)
-//
-// chipWrap handles the centering translate, chipSvg handles only the scale
-// animation — so the two transforms never fight each other, and the chip's
-// geographic location is exactly at MapLibre's translate target regardless
-// of zoom. (Previously, using `left:50%/margin:-13px` on the chip SVG was
-// producing subpixel drift on some zoom levels for markers whose lat/lng
-// didn't round cleanly.)
+// Figma spec: chip diameter 23, ring diameter 31 (≈3px gap).
 const SVG_NS    = 'http://www.w3.org/2000/svg';
-const PIN_OUTER = 34;    // outer hitbox — covers chip + ring
-const CHIP_SIZE = 23;    // chip diameter per figma
-const RING_OUT  = 31;    // ring nominal diameter per figma
-const ARC_R     = RING_OUT / 2;
+const PIN_OUTER = 34;
+const CHIP_R    = 23 / 2;       // chip radius 11.5
+const ARC_R     = 31 / 2;       // arc radius   15.5
 
 function createPinElement(
   c: Challenge,
@@ -706,13 +696,13 @@ function createPinElement(
     `width:${PIN_OUTER}px;height:${PIN_OUTER}px;cursor:pointer;` +
     `position:relative;display:block;line-height:0;`;
 
-  // Ring — fills outer, centered via its own viewBox
-  const ringSvg = document.createElementNS(SVG_NS, 'svg');
-  ringSvg.setAttribute('width', String(PIN_OUTER));
-  ringSvg.setAttribute('height', String(PIN_OUTER));
-  ringSvg.setAttribute('viewBox', `-${PIN_OUTER / 2} -${PIN_OUTER / 2} ${PIN_OUTER} ${PIN_OUTER}`);
-  ringSvg.style.cssText = 'position:absolute;inset:0;pointer-events:none;display:block;overflow:visible;';
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('width', String(PIN_OUTER));
+  svg.setAttribute('height', String(PIN_OUTER));
+  svg.setAttribute('viewBox', `-${PIN_OUTER / 2} -${PIN_OUTER / 2} ${PIN_OUTER} ${PIN_OUTER}`);
+  svg.style.cssText = 'display:block;overflow:visible;';
 
+  // Timer arc — outside the chip
   const activatedMs = c.activatedAt ? new Date(c.activatedAt).getTime() : Date.now();
   const totalMs    = expireMinutes * 60_000;
   const pctRemain  = Math.max(0, Math.min(100, (1 - (Date.now() - activatedMs) / totalMs) * 100));
@@ -731,29 +721,17 @@ function createPinElement(
   arc.setAttribute('data-activated-at', String(activatedMs));
   arc.setAttribute('data-total-ms', String(totalMs));
   arc.setAttribute('transform', 'rotate(-90)');
-  ringSvg.appendChild(arc);
-  outer.appendChild(ringSvg);
+  svg.appendChild(arc);
 
-  // Chip wrapper — centered in outer via translate(-50%,-50%). This element
-  // is the one whose top-left sits at outer's center after the translate;
-  // its own size is the chip size so everything stays pixel-stable.
-  const chipWrap = document.createElement('div');
-  chipWrap.style.cssText =
-    `position:absolute;left:50%;top:50%;width:${CHIP_SIZE}px;height:${CHIP_SIZE}px;` +
-    `transform:translate(-50%, -50%);display:block;line-height:0;`;
+  // Chip — drawn inside the SVG at (0,0). Wrapped in a <g> so the
+  // click-pop scale animation targets a single element without disturbing
+  // the arc, which is a sibling.
+  const chip = document.createElementNS(SVG_NS, 'g');
+  chip.setAttribute('class', 'pin-chip');
+  svg.appendChild(chip);
+  renderChipSvg(chip, c, activeChallengeId);
 
-  // Chip — animates on click via .pin-pop. Only has a `scale` transform,
-  // which composes cleanly with no translate on this element.
-  const chipSvg = document.createElementNS(SVG_NS, 'svg');
-  chipSvg.classList.add('pin-chip');
-  chipSvg.setAttribute('width', String(CHIP_SIZE));
-  chipSvg.setAttribute('height', String(CHIP_SIZE));
-  chipSvg.setAttribute('viewBox', `-${CHIP_SIZE / 2} -${CHIP_SIZE / 2} ${CHIP_SIZE} ${CHIP_SIZE}`);
-  chipSvg.style.cssText = 'display:block;transform-origin:center center;';
-  chipWrap.appendChild(chipSvg);
-  outer.appendChild(chipWrap);
-
-  renderChipSvg(chipSvg, c, activeChallengeId);
+  outer.appendChild(svg);
   return outer;
 }
 
@@ -765,11 +743,10 @@ function updatePinChip(outer: HTMLElement, c: Challenge, activeChallengeId: stri
 }
 
 function renderChipSvg(chip: SVGElement, c: Challenge, activeChallengeId: string | null) {
-  const isActive = c.id === activeChallengeId;
-  const isWager  = c.type === 'wager';
+  const isActive    = c.id === activeChallengeId;
+  const isWager     = c.type === 'wager';
   const borderWidth = isActive ? 3 : 2;
-  // Chip radius matches CHIP_SIZE (23) / 2
-  const r = CHIP_SIZE / 2;
+  const r           = CHIP_R;
 
   // Wager border = 8 white notches around the chip (stroke-dasharray).
   // Circumference at r = 11.5 → ~72.3; cycle of ~9.04 per notch with

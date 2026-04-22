@@ -63,11 +63,17 @@ button {
   }
 }
 
-/* Click-feedback pop for challenge pins */
+/* Click-feedback pop for challenge pins. The chip is an SVG <g> whose
+   content is drawn at (0,0) in user coords, so `transform-origin: 0 0`
+   scales from the chip's visual center. */
 @keyframes pin-pop {
   0%   { transform: scale(1); }
   40%  { transform: scale(1.3); }
   100% { transform: scale(1); }
+}
+.pin-chip {
+  transform-origin: 0 0;
+  transform-box: view-box;
 }
 .pin-pop {
   animation: pin-pop 260ms ease-out;
