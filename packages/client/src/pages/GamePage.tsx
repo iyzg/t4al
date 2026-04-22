@@ -58,6 +58,7 @@ export default function GamePage() {
   const gameStatus        = useGameStore((s) => s.gameStatus);
   const teamColor         = useGameStore((s) => s.teamColor);
   const gameId            = useGameStore((s) => s.gameId);
+  const game              = useGameStore((s) => s.game);
   const teamSnapshots     = useGameStore((s) => s.teamSnapshots);
   const acceptedLocally   = useGameStore((s) => s.acceptedLocally);
 
@@ -173,42 +174,49 @@ export default function GamePage() {
       }
     });
 
+    const expireMinutes = game?.challengeExpireMinutes ?? 10;
+
     challengeList.forEach((c) => {
       if (c.status !== 'active') return;
-      const teamsOnIt = getTeamsOnChallenge(c.id, teamSnapshots);
       const existing = markersRef.current.get(c.id);
       if (existing) {
         existing.setLngLat([c.lng, c.lat]);
-        const visual = existing.getElement().firstChild as HTMLElement;
-        applyMarkerStyle(visual, c, activeChallengeId, teamsOnIt);
+        updatePinChip(existing.getElement(), c, activeChallengeId);
         return;
       }
-      // Outer el is positioned by MapLibre via transform: translate(...).
-      // Inner `visual` holds the circle + styles + animation, so our
-      // scale-on-click transform doesn't collide with MapLibre's.
-      const el = document.createElement('div');
-      el.style.width = '22px';
-      el.style.height = '22px';
-      el.style.cursor = 'pointer';
-      const visual = document.createElement('div');
-      visual.style.width = '100%';
-      visual.style.height = '100%';
-      visual.style.transformOrigin = 'center center';
-      el.appendChild(visual);
-
-      applyMarkerStyle(visual, c, activeChallengeId, teamsOnIt);
+      const el = createPinElement(c, activeChallengeId, expireMinutes);
       el.addEventListener('click', (e) => {
         e.stopPropagation();
-        // Remove + reflow + re-add so repeated clicks re-trigger the animation
-        visual.classList.remove('pin-pop');
-        void visual.offsetWidth;
-        visual.classList.add('pin-pop');
+        const chip = el.querySelector('.pin-chip') as HTMLElement | null;
+        if (chip) {
+          chip.classList.remove('pin-pop');
+          // force reflow so repeated clicks re-trigger the animation
+          chip.getBoundingClientRect();
+          chip.classList.add('pin-pop');
+        }
         setSelectedChallengeId(c.id);
       });
       const marker = new maplibregl.Marker({ element: el }).setLngLat([c.lng, c.lat]).addTo(map);
       markersRef.current.set(c.id, marker);
     });
-  }, [challenges, activeChallengeId, teamSnapshots]);
+  }, [challenges, activeChallengeId, teamSnapshots, game?.challengeExpireMinutes]);
+
+  // Tick the timer arcs once per second
+  useEffect(() => {
+    const tick = () => {
+      document.querySelectorAll('.timer-arc').forEach((node) => {
+        const arc = node as SVGCircleElement;
+        const activatedMs = Number(arc.getAttribute('data-activated-at'));
+        const totalMs     = Number(arc.getAttribute('data-total-ms'));
+        if (!totalMs) return;
+        const pct = Math.max(0, Math.min(100, (1 - (Date.now() - activatedMs) / totalMs) * 100));
+        arc.setAttribute('stroke-dasharray', `${pct} 100`);
+      });
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   // Deselect gone challenge
   useEffect(() => {
@@ -579,10 +587,8 @@ function TeamStack({ teams }: { teams: TeamSnapshot[] }) {
   return (
     <div
       style={{
-        // Positioned by the parent HUD column; small left-pad so thin bars
-        // sit roughly under the pills' text, not flush with their edge.
-        display: 'flex', flexDirection: 'column', alignItems: 'center',
-        gap: 2, paddingLeft: 6,
+        display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
+        gap: 2,
       }}
     >
       {ranked.map(({ team, rank }, i) => {
@@ -667,32 +673,87 @@ function LobbyBanner() {
   );
 }
 
-function applyMarkerStyle(
-  el: HTMLElement,
-  challenge: Challenge,
+// ── Pin construction ──────────────────────────────────────────────────────
+// Each pin is an outer 44×44 div (positioned by MapLibre) containing:
+//   1. Timer arc SVG — thin orange ring outside the chip; arc length = % of
+//      time remaining until the challenge expires. Pointer-events: none so
+//      clicks pass through to the chip.
+//   2. Chip SVG — solid orange circle with a white border. Wager chips get a
+//      dashed/notched border that reads like a casino chip. This element is
+//      what scales on click (class `pin-chip`).
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function createPinElement(
+  c: Challenge,
   activeChallengeId: string | null,
-  teamsOnIt: TeamSnapshot[],
-) {
-  el.style.width = '22px';
-  el.style.height = '22px';
-  el.style.borderRadius = '50%';
-  el.style.cursor = 'pointer';
+  expireMinutes: number,
+): HTMLElement {
+  const outer = document.createElement('div');
+  outer.style.cssText = 'width:44px;height:44px;cursor:pointer;position:relative;';
 
-  if (challenge.id === activeChallengeId) {
-    el.style.border = '3px solid white';
-  } else {
-    el.style.border = '2px solid white';
-  }
-  el.style.boxShadow = 'none';
-  el.style.opacity = '1';
+  // Timer arc at r=18 (outside the chip at r=11)
+  const ringSvg = document.createElementNS(SVG_NS, 'svg');
+  ringSvg.setAttribute('width', '44');
+  ringSvg.setAttribute('height', '44');
+  ringSvg.setAttribute('viewBox', '-22 -22 44 44');
+  ringSvg.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
 
-  if (teamsOnIt.length > 0) {
-    const sliceAngle = 360 / teamsOnIt.length;
-    const stops = teamsOnIt.map((t, i) =>
-      `${t.color} ${i * sliceAngle}deg ${(i + 1) * sliceAngle}deg`,
-    ).join(', ');
-    el.style.background = `conic-gradient(${stops})`;
-  } else {
-    el.style.background = CHALLENGE_COLOR;
-  }
+  const activatedMs = c.activatedAt ? new Date(c.activatedAt).getTime() : Date.now();
+  const totalMs    = expireMinutes * 60_000;
+  const pctRemain  = Math.max(0, Math.min(100, (1 - (Date.now() - activatedMs) / totalMs) * 100));
+
+  const arc = document.createElementNS(SVG_NS, 'circle');
+  arc.setAttribute('class', 'timer-arc');
+  arc.setAttribute('cx', '0');
+  arc.setAttribute('cy', '0');
+  arc.setAttribute('r', '18');
+  arc.setAttribute('fill', 'none');
+  arc.setAttribute('stroke', CHALLENGE_COLOR);
+  arc.setAttribute('stroke-width', '2.5');
+  arc.setAttribute('stroke-linecap', 'round');
+  arc.setAttribute('pathLength', '100');
+  arc.setAttribute('stroke-dasharray', `${pctRemain} 100`);
+  arc.setAttribute('data-activated-at', String(activatedMs));
+  arc.setAttribute('data-total-ms', String(totalMs));
+  arc.setAttribute('transform', 'rotate(-90)');
+  ringSvg.appendChild(arc);
+  outer.appendChild(ringSvg);
+
+  // Chip SVG — centered inside outer
+  const chipSvg = document.createElementNS(SVG_NS, 'svg');
+  chipSvg.classList.add('pin-chip');
+  chipSvg.setAttribute('width', '26');
+  chipSvg.setAttribute('height', '26');
+  chipSvg.setAttribute('viewBox', '-13 -13 26 26');
+  chipSvg.style.cssText =
+    'position:absolute;left:50%;top:50%;margin-left:-13px;margin-top:-13px;' +
+    'transform-origin:center center;';
+  outer.appendChild(chipSvg);
+
+  renderChipSvg(chipSvg, c, activeChallengeId);
+  return outer;
+}
+
+// Update the chip only — border weight, wager notches, active state.
+// The timer arc updates itself every second via the component-level interval.
+function updatePinChip(outer: HTMLElement, c: Challenge, activeChallengeId: string | null) {
+  const chip = outer.querySelector('.pin-chip');
+  if (chip) renderChipSvg(chip as SVGElement, c, activeChallengeId);
+}
+
+function renderChipSvg(chip: SVGElement, c: Challenge, activeChallengeId: string | null) {
+  const isActive = c.id === activeChallengeId;
+  const isWager  = c.type === 'wager';
+  const borderWidth = isActive ? 3 : 2;
+
+  // Wager border = 8 white notches around the chip (stroke-dasharray).
+  // Circumference at r=11 ≈ 69.1; 8 evenly-spaced notches → cycle of ~8.64
+  // with notch length 3 and gap 5.64.
+  const borderMarkup = isWager
+    ? `<circle cx="0" cy="0" r="10" fill="none" stroke="white" stroke-width="3" stroke-dasharray="3 5.64" />`
+    : `<circle cx="0" cy="0" r="11" fill="none" stroke="white" stroke-width="${borderWidth}" />`;
+
+  chip.innerHTML =
+    `<circle cx="0" cy="0" r="11" fill="${CHALLENGE_COLOR}" />` +
+    borderMarkup;
 }
