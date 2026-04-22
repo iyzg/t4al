@@ -16,7 +16,12 @@ export const CHICAGO_BOUNDS: [[number, number], [number, number]] = [
   [-87.74, 41.82],  // SW — matches the extract
   [-87.50, 41.93],  // NE
 ];
-export const MIN_ZOOM = 13;   // don't allow pulling out past where the data is dense
+// minZoom 14: below this, the water polygon in the PMTiles file is simplified
+// so aggressively that Lake Michigan's west shoreline cuts diagonally over
+// downtown (a huge blue wedge). At z≥14 the shoreline is drawn with enough
+// detail to stay where it belongs. Re-extracting with higher-detail tiles
+// would let this drop back to 12.
+export const MIN_ZOOM = 14;
 export const MAX_ZOOM = 16;   // slight over-zoom of the z=15 cap is OK (tiles stretch smoothly)
 
 // Landuse kinds that should render as green parks.
@@ -58,8 +63,18 @@ export function getMapStyle(): maplibregl.StyleSpecification {
         paint: { 'fill-color': '#dee4d0', 'fill-opacity': 0.5 } },
 
       // ── water ──
+      // Polygons (lakes, wide rivers, ponds, filled shoreline) — render as fill.
       { id: 'water', type: 'fill', source: src, 'source-layer': 'water',
         paint: { 'fill-color': '#bdd5e8' } },
+      // Rivers + canals at low zoom come as LineStrings, which the fill layer
+      // above doesn't render. Add a matching blue line so we don't lose them.
+      { id: 'water-lines', type: 'line', source: src, 'source-layer': 'water',
+        filter: ['in', '$type', 'LineString'],
+        paint: {
+          'line-color': '#bdd5e8',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 12, 1.2, 16, 3.6],
+        },
+      },
 
       // ── buildings — warm, slightly darker ──
       // Buildings exist only at z≥13 in the protomaps schema. Fade their
