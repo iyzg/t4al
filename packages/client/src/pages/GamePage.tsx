@@ -707,7 +707,15 @@ function createPinElement(
   const outer = document.createElement('div');
   outer.style.cssText =
     `width:${PIN_OUTER}px;height:${PIN_OUTER}px;cursor:pointer;` +
-    `position:relative;display:block;line-height:0;`;
+    `position:relative;display:block;line-height:0;` +
+    // DIAGNOSTIC: blue outline shows the element's CSS bounding box, cyan
+    // crosshair shows its computed center. Compare vs the black dot +
+    // orange chip to see where the discrepancy lives.
+    `outline:1px dashed #00f;outline-offset:-1px;` +
+    `background:` +
+    `radial-gradient(circle at center, rgba(0,255,255,0.5) 0 1.5px, transparent 2px),` +
+    `linear-gradient(to right, transparent calc(50% - 0.5px), rgba(0,255,255,0.3) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),` +
+    `linear-gradient(to bottom, transparent calc(50% - 0.5px), rgba(0,255,255,0.3) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px));`;
 
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('width', String(PIN_OUTER));
