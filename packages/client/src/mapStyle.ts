@@ -4,17 +4,16 @@ export const CHICAGO_CENTER: [number, number] = [-87.6298, 41.8827];
 export const DEFAULT_ZOOM = 15;
 
 // Pan + zoom limits matched to the chicago.pmtiles extract.
-// The file contains tiles only for this tight box (Loop + Near North +
-// Near South) at zooms 0–15. Panning or zooming outside shows empty
-// geometry ("blue wedges" from unclipped water polygons at low zoom,
-// oversharp upscale above zoom 15).
-//
-// If you want a wider play area or sharper zoom, re-extract with:
-//   pmtiles extract <source.pmtiles> chicago.pmtiles \
-//       --bbox=-87.85,41.76,-87.50,42.00 --maxzoom=17
+// The file covers Near West Side → Lincoln Park (lng -87.85 → -87.50,
+// lat 41.76 → 42.00) at zooms 10–15. Re-extracted from the Protomaps
+// daily build on 2026-04-21 via:
+//   pmtiles extract https://build.protomaps.com/YYYYMMDD.pmtiles chicago.pmtiles \
+//       --bbox=-87.85,41.76,-87.50,42.00 --minzoom=10 --maxzoom=17
+// (maxzoom caps at 15 since that's what Protomaps' daily basemap builds to;
+// for sharper tiles you'd need to run planetiler yourself.)
 export const CHICAGO_BOUNDS: [[number, number], [number, number]] = [
-  [-87.74, 41.82],  // SW — matches the extract
-  [-87.50, 41.93],  // NE
+  [-87.85, 41.76],  // SW — matches the extract
+  [-87.50, 42.00],  // NE
 ];
 // minZoom 14: below this, the water polygon in the PMTiles file is simplified
 // so aggressively that Lake Michigan's west shoreline cuts diagonally over
