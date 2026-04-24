@@ -55,6 +55,18 @@ button {
 }
 
 
+/* Challenge card: slide up from the bottom when first opened. The card is
+   rendered inside ChallengeCard with a stable outer <div>, so switching
+   between the main view and a sub-view (score-entry / wager-setup) does
+   NOT re-trigger this animation — the shell stays mounted. */
+@keyframes sheet-slide-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+.challenge-card {
+  animation: sheet-slide-up 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
 /* Click-feedback pop for challenge pins. The chip is an SVG <g> whose
    content is drawn at (0,0) in user coords, so `transform-origin: 0 0`
    scales from the chip's visual center. */

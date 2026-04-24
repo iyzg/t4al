@@ -429,24 +429,23 @@ function ChallengeCard(props: ChallengeCardProps) {
     (isMyActive && wagerAmount == null)
   );
 
+  // All three body variants render inside the same outer shell so the
+  // slide-up animation fires once (on sheet open) and NOT when switching
+  // sub-views.
+  let body: React.ReactNode;
   if (subView === 'score-entry' && c.type === 'variable') {
-    return (
-      <ScoreEntryView
+    body = (
+      <ScoreEntryBody
         challenge={c}
-        onClose={onClose}
         onBack={() => setSubView(null)}
         onSubmit={(count) => { onComplete(count); setSubView(null); }}
       />
     );
-  }
-
-  if (showWagerSetup) {
-    return (
-      <WagerSetupView
-        challenge={c}
+  } else if (showWagerSetup) {
+    body = (
+      <WagerSetupBody
         tokens={tokens}
         alreadyAccepted={isMyActive}
-        onClose={onClose}
         onBack={() => {
           if (isMyActive) onAbandon();
           setSubView(null);
@@ -457,24 +456,63 @@ function ChallengeCard(props: ChallengeCardProps) {
         }}
       />
     );
+  } else {
+    body = (
+      <MainBody
+        challenge={c}
+        descriptionVisible={descriptionVisible}
+        inRange={inRange}
+        isMyActive={isMyActive}
+        activeChallengeId={activeChallengeId}
+        pts={pts}
+        countdownText={countdownText}
+        distanceText={distanceText}
+        onAccept={onAccept}
+        onAbandon={onAbandon}
+        onComplete={onComplete}
+        onFailWager={onFailWager}
+        onEnterScoreEntry={() => setSubView('score-entry')}
+        onOpenWagerSetup={() => setSubView('wager-setup')}
+      />
+    );
   }
 
   return (
-    <div
-      className="challenge-card"
-      style={cardShellStyle()}
-    >
-      {/* Title + X */}
+    <div className="challenge-card" style={cardShellStyle()}>
       <CardHeader title={c.name} onClose={onClose} />
+      {body}
+    </div>
+  );
+}
 
-      {/* Stats row */}
+function MainBody({
+  challenge: c, descriptionVisible, inRange, isMyActive, activeChallengeId,
+  pts, countdownText, distanceText,
+  onAccept, onAbandon, onComplete, onFailWager, onEnterScoreEntry, onOpenWagerSetup,
+}: {
+  challenge: Challenge;
+  descriptionVisible: boolean;
+  inRange: boolean;
+  isMyActive: boolean;
+  activeChallengeId: string | null;
+  pts: string;
+  countdownText: string;
+  distanceText: string;
+  onAccept: () => void;
+  onAbandon: () => void;
+  onComplete: (count?: number) => void;
+  onFailWager: () => void;
+  onEnterScoreEntry: () => void;
+  onOpenWagerSetup: () => void;
+}) {
+  return (
+    <>
       <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 14, color: STAT_TEXT, alignItems: 'center' }}>
         <StatChip icon={<TokensIcon size={14} />} label={pts} />
         <StatChip icon={<ClockIcon size={14} />} label={countdownText} />
         <StatChip icon={<LocationIcon size={14} />} label={distanceText} />
       </div>
 
-      {/* Description — literal text, rendered in Flow Block font until in range */}
       <div
         className={descriptionVisible ? undefined : 'font-flow'}
         style={{
@@ -491,7 +529,6 @@ function ChallengeCard(props: ChallengeCardProps) {
         {c.description}
       </div>
 
-      {/* CTA area */}
       <div style={{ marginTop: 18 }}>
         {isMyActive
           ? <ActiveActions
@@ -499,7 +536,7 @@ function ChallengeCard(props: ChallengeCardProps) {
               onAbandon={onAbandon}
               onComplete={onComplete}
               onFailWager={onFailWager}
-              onEnterScoreEntry={() => setSubView('score-entry')}
+              onEnterScoreEntry={onEnterScoreEntry}
             />
           : activeChallengeId
             ? <div style={{ textAlign: 'center', color: STAT_TEXT, padding: '12px 8px' }}>
@@ -508,11 +545,11 @@ function ChallengeCard(props: ChallengeCardProps) {
             : <ActivationButton
                 type={c.type}
                 disabled={!inRange}
-                onClick={c.type === 'wager' ? () => setSubView('wager-setup') : onAccept}
+                onClick={c.type === 'wager' ? onOpenWagerSetup : onAccept}
               />
         }
       </div>
-    </div>
+    </>
   );
 }
 
@@ -739,14 +776,13 @@ function CardHeader({ title, onClose }: { title: string; onClose: () => void }) 
   );
 }
 
-// Sub-view for variable challenges. Opens when the user taps Claim on a variable
-// challenge; replaces the main card body with a count picker and a press-and-hold
-// Claim button.
-function ScoreEntryView({
-  challenge, onClose, onBack, onSubmit,
+// Body for variable challenge Claim — count picker, preview, press-hold Claim.
+// Rendered inside ChallengeCard so the outer shell (and slide-up animation)
+// is shared with other body variants.
+function ScoreEntryBody({
+  challenge, onBack, onSubmit,
 }: {
   challenge: Challenge;
-  onClose: () => void;
   onBack: () => void;
   onSubmit: (count: number) => void;
 }) {
@@ -757,15 +793,11 @@ function ScoreEntryView({
   const total = count * per;
 
   return (
-    <div className="challenge-card" style={cardShellStyle()}>
-      <CardHeader title={challenge.name} onClose={onClose} />
-
-      {/* Rate subtitle */}
+    <>
       <div style={{ color: ORANGE, fontSize: 14, fontWeight: 600, marginTop: 2 }}>
         {per} pts / {unit}
       </div>
 
-      {/* Count picker */}
       <div style={{ textAlign: 'center', padding: '18px 0 14px' }}>
         <div style={{ fontSize: 14, color: STAT_TEXT, marginBottom: 10 }}>
           How many {unitPlural}?
@@ -777,7 +809,6 @@ function ScoreEntryView({
         </div>
       </div>
 
-      {/* Preview pill */}
       <div style={{
         background: '#FBEFE1',
         padding: '12px 16px',
@@ -796,7 +827,7 @@ function ScoreEntryView({
           <ClaimIcon size={16} /> Claim
         </OrangeHoldButton>
       </ButtonPair>
-    </div>
+    </>
   );
 }
 
@@ -828,17 +859,13 @@ function Stepper({
   );
 }
 
-// Sub-view for wager challenges. Opens when the user taps the Wager activation
-// button (pre-accept) or when reconnecting to an accepted wager without an
-// amount yet. Confirm emits accept+wager atomically for the pre-accept case,
-// or wager-only for the reconnect case.
-function WagerSetupView({
-  challenge, tokens, alreadyAccepted, onClose, onBack, onConfirm,
+// Body for the wager setup. Rendered inside ChallengeCard so the shell and
+// animation are shared with other body variants.
+function WagerSetupBody({
+  tokens, alreadyAccepted, onBack, onConfirm,
 }: {
-  challenge: Challenge;
   tokens: number;
   alreadyAccepted: boolean;
-  onClose: () => void;
   onBack: () => void;
   onConfirm: (amount: number) => void;
 }) {
@@ -846,46 +873,44 @@ function WagerSetupView({
   const [amount, setAmount] = useState(Math.min(10, max));
   const canWager = tokens >= 1;
 
+  if (!canWager) {
+    return (
+      <div style={{ padding: '24px 0' }}>
+        <p style={{ margin: '0 0 14px 0', color: STAT_TEXT, textAlign: 'center' }}>
+          You need at least 1 chip to wager.
+        </p>
+        <GreyButton onClick={onBack}>Back</GreyButton>
+      </div>
+    );
+  }
+
   return (
-    <div className="challenge-card" style={cardShellStyle()}>
-      <CardHeader title={challenge.name} onClose={onClose} />
-
-      {!canWager ? (
-        <div style={{ padding: '24px 0' }}>
-          <p style={{ margin: '0 0 14px 0', color: STAT_TEXT, textAlign: 'center' }}>
-            You need at least 1 chip to wager.
-          </p>
-          <GreyButton onClick={onBack}>Back</GreyButton>
+    <>
+      <div style={{ textAlign: 'center', padding: '18px 0 14px' }}>
+        <div style={{ fontSize: 14, color: STAT_TEXT, marginBottom: 10 }}>
+          How many chips to wager?
         </div>
-      ) : (
-        <>
-          <div style={{ textAlign: 'center', padding: '18px 0 14px' }}>
-            <div style={{ fontSize: 14, color: STAT_TEXT, marginBottom: 10 }}>
-              How many chips to wager?
-            </div>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 24 }}>
-              <Stepper onClick={() => setAmount(Math.max(1, amount - 1))} disabled={amount <= 1}>−</Stepper>
-              <span style={{ fontSize: 40, fontWeight: 700, minWidth: 70, textAlign: 'center' }}>{amount}</span>
-              <Stepper onClick={() => setAmount(Math.min(max, amount + 1))} disabled={amount >= max}>+</Stepper>
-            </div>
-            <div style={{ fontSize: 14, color: STAT_TEXT, marginTop: 10 }}>
-              Balance: {tokens}
-            </div>
-          </div>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 24 }}>
+          <Stepper onClick={() => setAmount(Math.max(1, amount - 1))} disabled={amount <= 1}>−</Stepper>
+          <span style={{ fontSize: 40, fontWeight: 700, minWidth: 70, textAlign: 'center' }}>{amount}</span>
+          <Stepper onClick={() => setAmount(Math.min(max, amount + 1))} disabled={amount >= max}>+</Stepper>
+        </div>
+        <div style={{ fontSize: 14, color: STAT_TEXT, marginTop: 10 }}>
+          Balance: {tokens}
+        </div>
+      </div>
 
-          <ButtonPair>
-            <GreyButton onClick={onBack}>Back</GreyButton>
-            <OrangeButton onClick={() => onConfirm(amount)}>Confirm</OrangeButton>
-          </ButtonPair>
+      <ButtonPair>
+        <GreyButton onClick={onBack}>Back</GreyButton>
+        <OrangeButton onClick={() => onConfirm(amount)}>Confirm</OrangeButton>
+      </ButtonPair>
 
-          {alreadyAccepted && (
-            <div style={{ fontSize: 12, color: STAT_TEXT, textAlign: 'center', marginTop: 10 }}>
-              Back will abandon (no amount set yet).
-            </div>
-          )}
-        </>
+      {alreadyAccepted && (
+        <div style={{ fontSize: 12, color: STAT_TEXT, textAlign: 'center', marginTop: 10 }}>
+          Back will abandon (no amount set yet).
+        </div>
       )}
-    </div>
+    </>
   );
 }
 
