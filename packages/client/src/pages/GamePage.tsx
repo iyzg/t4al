@@ -17,6 +17,8 @@ import { LOCATION_PING_INTERVAL_MS, CHALLENGE_COLOR } from '@t4al/shared';
 import type { Challenge, TeamSnapshot } from '@t4al/shared';
 import GameHUD from '../components/GameHUD';
 import Toast from '../components/Toast';
+import { TokensIcon, ClockIcon, LocationIcon, StartIcon, ClaimIcon, WagerIcon } from '../components/icons';
+import { formatBlocks } from '../lib/distance';
 
 ensurePmtilesProtocol();
 
@@ -35,12 +37,6 @@ function getTeamsOnChallenge(challengeId: string, teamSnapshots: TeamSnapshot[])
   return teamSnapshots.filter((t) => t.activeChallengeId === challengeId);
 }
 
-// Type-specific "reward" string shown on the pin and card header
-function rewardLabel(c: Challenge): string {
-  if (c.type === 'normal')   return `${c.tokens} tokens`;
-  if (c.type === 'variable') return `${c.tokensPerUnit}/${c.unitLabel}`;
-  return 'WAGER';
-}
 
 export default function GamePage() {
   const navigate = useNavigate();
@@ -298,6 +294,7 @@ export default function GamePage() {
           activeChallengeId={activeChallengeId}
           wagerAmount={wagerAmount}
           tokens={tokens}
+          expireMinutes={game?.challengeExpireMinutes ?? 10}
           onClose={() => setSelectedChallengeId(null)}
           onAccept={handleAccept}
           onAbandon={handleAbandon}
@@ -310,7 +307,15 @@ export default function GamePage() {
   );
 }
 
-// ── Challenge card with type-specific flows ──
+// ── Challenge card ──
+
+// Palette (Figma)
+const CARD_BG = '#FFFFFF';
+const CARD_TEXT = '#111111';
+const STAT_TEXT = '#333333';
+const ORANGE = '#E88B3E';
+const GREY_BTN = '#E2E2E2';
+const GREY_BTN_TEXT = '#333333';
 
 interface ChallengeCardProps {
   challenge: Challenge;
@@ -321,6 +326,7 @@ interface ChallengeCardProps {
   activeChallengeId: string | null;
   wagerAmount: number | null;
   tokens: number;
+  expireMinutes: number;
   onClose: () => void;
   onAccept: () => void;
   onAbandon: () => void;
@@ -329,72 +335,164 @@ interface ChallengeCardProps {
   onFailWager: () => void;
 }
 
+function pointsDisplay(c: Challenge, wagerAmount: number | null, isMyActive: boolean): string {
+  if (c.type === 'normal')   return String(c.tokens ?? 0);
+  if (c.type === 'variable') return `${c.tokensPerUnit}/${c.unitLabel}`;
+  if (isMyActive && wagerAmount != null) return String(wagerAmount);
+  return '???';
+}
+
+function formatCountdown(msRemaining: number): string {
+  if (msRemaining <= 0) return '0s';
+  const total = Math.floor(msRemaining / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  if (m <= 0) return `${s}s`;
+  return `${m}m ${s.toString().padStart(2, '0')}s`;
+}
+
+function useNowTick(intervalMs = 1000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return now;
+}
+
 function ChallengeCard(props: ChallengeCardProps) {
   const {
     challenge: c, descriptionVisible, distance, inRange, isMyActive,
-    activeChallengeId, wagerAmount, tokens,
+    activeChallengeId, wagerAmount, tokens, expireMinutes,
     onClose, onAccept, onAbandon, onComplete, onSetWager, onFailWager,
   } = props;
 
-  const typeBadgeColor = CHALLENGE_COLOR;
+  const now = useNowTick(1000);
+  const activatedMs = c.activatedAt ? new Date(c.activatedAt).getTime() : null;
+  const remainingMs = activatedMs != null ? (activatedMs + expireMinutes * 60_000 - now) : null;
+  const countdownText = remainingMs != null ? formatCountdown(remainingMs) : '—';
+  const distanceText = distance != null ? formatBlocks(distance) : '—';
+  const pts = pointsDisplay(c, wagerAmount, isMyActive);
 
   return (
     <div
       className="challenge-card"
       style={{
-        position: 'absolute', bottom: 24, left: 16, right: 16,
-        background: '#1a1a2e', color: 'white', borderRadius: 12, padding: 16,
-        maxWidth: 400, margin: '0 auto',
+        position: 'absolute', bottom: 0, left: 0, right: 0,
+        background: CARD_BG, color: CARD_TEXT,
+        borderTopLeftRadius: 18, borderTopRightRadius: 18,
+        padding: '20px 20px 28px',
+        maxWidth: 480, margin: '0 auto',
+        boxShadow: '0 -8px 32px rgba(0,0,0,0.18)',
       }}
     >
-      <button
-        onClick={onClose}
-        style={{ position: 'absolute', top: 4, right: 4, background: 'none', border: 'none', color: 'white', fontSize: 22, cursor: 'pointer', padding: '8px 12px', lineHeight: 1 }}
-      >
-        ×
-      </button>
-
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', paddingRight: 32 }}>
-        <span style={{
-          fontSize: 10, fontWeight: 'bold', padding: '2px 8px', borderRadius: 10,
-          background: typeBadgeColor, letterSpacing: 1,
-        }}>
-          {c.type.toUpperCase()}
-        </span>
-        <h3 style={{ margin: 0, flex: 1 }}>{c.name}</h3>
-        <span style={{ fontWeight: 'bold', color: '#f39c12', whiteSpace: 'nowrap' }}>{rewardLabel(c)}</span>
+      {/* Title + X */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        <h3 style={{ margin: 0, fontSize: 20, fontWeight: 700, flex: 1, lineHeight: 1.2, color: CARD_TEXT }}>
+          {c.name}
+        </h3>
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: 22, color: CARD_TEXT, padding: 0, lineHeight: 1, marginTop: -2,
+          }}
+        >
+          ×
+        </button>
       </div>
 
-      {descriptionVisible
-        ? <p style={{ marginTop: 8, opacity: 0.85 }}>{c.description}</p>
-        : <p style={{ marginTop: 8, opacity: 0.5, fontStyle: 'italic' }}>Get closer to reveal the challenge…</p>
-      }
+      {/* Stats row */}
+      <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 13, color: STAT_TEXT, alignItems: 'center' }}>
+        <StatChip icon={<TokensIcon size={14} />} label={pts} />
+        <StatChip icon={<ClockIcon size={14} />} label={countdownText} />
+        <StatChip icon={<LocationIcon size={14} />} label={distanceText} />
+      </div>
 
-      {/* Actions */}
-      {isMyActive
-        ? <ActiveActions
-            challenge={c}
-            wagerAmount={wagerAmount}
-            tokens={tokens}
-            onAbandon={onAbandon}
-            onComplete={onComplete}
-            onSetWager={onSetWager}
-            onFailWager={onFailWager}
-          />
-        : activeChallengeId
-          ? <p style={{ opacity: 0.6, marginTop: 8 }}>You already have an active challenge</p>
-          : inRange
-            ? <button
+      {/* Description — literal text, rendered in Flow Block font until in range */}
+      <div
+        className={descriptionVisible ? undefined : 'font-flow'}
+        style={{
+          marginTop: 14,
+          height: 108,
+          overflowY: 'auto',
+          fontSize: 15,
+          lineHeight: 1.5,
+          color: CARD_TEXT,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+        }}
+      >
+        {c.description}
+      </div>
+
+      {/* CTA area */}
+      <div style={{ marginTop: 18 }}>
+        {isMyActive
+          ? <ActiveActions
+              challenge={c}
+              wagerAmount={wagerAmount}
+              tokens={tokens}
+              onAbandon={onAbandon}
+              onComplete={onComplete}
+              onSetWager={onSetWager}
+              onFailWager={onFailWager}
+            />
+          : activeChallengeId
+            ? <div style={{ textAlign: 'center', color: STAT_TEXT, padding: '12px 8px' }}>
+                You already have an active challenge
+              </div>
+            : <ActivationButton
+                type={c.type}
+                disabled={!inRange}
                 onClick={onAccept}
-                style={{ marginTop: 12, width: '100%', padding: '12px 10px', background: '#3498db', border: 'none', borderRadius: 6, color: 'white', fontWeight: 'bold', fontSize: 15 }}
-              >
-                Accept
-              </button>
-            : <p style={{ opacity: 0.6, marginTop: 8 }}>
-                {distance != null ? `${Math.round(distance)}m away — get closer to accept` : 'GPS loading…'}
-              </p>
-      }
+              />
+        }
+      </div>
     </div>
+  );
+}
+
+function StatChip({ icon, label }: { icon: React.ReactNode; label: string }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      {icon}
+      <span>{label}</span>
+    </span>
+  );
+}
+
+function ActivationButton({
+  type, disabled, onClick,
+}: {
+  type: Challenge['type'];
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const isWager = type === 'wager';
+  const Icon = isWager ? WagerIcon : StartIcon;
+  const label = isWager ? 'Wager' : 'Start';
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        width: '100%',
+        padding: '14px 16px',
+        border: 'none',
+        borderRadius: 12,
+        fontSize: 16,
+        fontWeight: 700,
+        color: disabled ? '#7a7a7a' : 'white',
+        background: disabled ? GREY_BTN : ORANGE,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+      }}
+    >
+      <Icon size={18} />
+      {label}
+    </button>
   );
 }
 
@@ -411,20 +509,12 @@ function ActiveActions(props: {
 
   if (challenge.type === 'normal') {
     return (
-      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-        <button
-          onClick={() => onComplete()}
-          style={{ flex: 1, padding: '12px 10px', background: '#2ecc71', border: 'none', borderRadius: 6, color: 'white', fontWeight: 'bold', fontSize: 15 }}
-        >
-          Claim ({challenge.tokens})
-        </button>
-        <button
-          onClick={onAbandon}
-          style={{ flex: 1, padding: '12px 10px', background: '#e74c3c', border: 'none', borderRadius: 6, color: 'white', fontSize: 15 }}
-        >
-          Abandon
-        </button>
-      </div>
+      <ButtonPair>
+        <GreyButton onClick={onAbandon}>Give Up</GreyButton>
+        <OrangeButton onClick={() => onComplete()}>
+          <ClaimIcon size={16} /> Claim
+        </OrangeButton>
+      </ButtonPair>
     );
   }
 
@@ -437,31 +527,63 @@ function ActiveActions(props: {
     return <WagerSetup tokens={tokens} onSetWager={onSetWager} onAbandon={onAbandon} />;
   }
   return (
-    <div style={{ marginTop: 12 }}>
-      <p style={{ opacity: 0.8, margin: '0 0 8px 0' }}>
-        You wagered <strong>{wagerAmount}</strong> tokens.
-      </p>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button
-          onClick={() => onComplete()}
-          style={{ flex: 1, padding: '12px 10px', background: '#2ecc71', border: 'none', borderRadius: 6, color: 'white', fontWeight: 'bold', fontSize: 15 }}
-        >
-          Pass (+{wagerAmount * 2})
-        </button>
-        <button
-          onClick={onFailWager}
-          style={{ flex: 1, padding: '12px 10px', background: '#e74c3c', border: 'none', borderRadius: 6, color: 'white', fontSize: 15 }}
-        >
-          Fail (−{wagerAmount})
-        </button>
-      </div>
-      <p style={{ opacity: 0.5, fontSize: 12, marginTop: 8, textAlign: 'center' }}>
-        Wager is locked — no abandon.
-      </p>
-    </div>
+    <ButtonPair>
+      <GreyButton onClick={onFailWager}>Fail</GreyButton>
+      <OrangeButton onClick={() => onComplete()}>
+        <ClaimIcon size={16} /> Success
+      </OrangeButton>
+    </ButtonPair>
   );
 }
 
+function ButtonPair({ children }: { children: React.ReactNode }) {
+  return <div style={{ display: 'flex', gap: 10 }}>{children}</div>;
+}
+
+function GreyButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        flex: 1,
+        padding: '14px 16px',
+        border: 'none',
+        borderRadius: 12,
+        fontSize: 16,
+        fontWeight: 600,
+        color: GREY_BTN_TEXT,
+        background: GREY_BTN,
+        cursor: 'pointer',
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function OrangeButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        flex: 1,
+        padding: '14px 16px',
+        border: 'none',
+        borderRadius: 12,
+        fontSize: 16,
+        fontWeight: 700,
+        color: 'white',
+        background: ORANGE,
+        cursor: 'pointer',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+// Variable: inline count input (sub-view comes in a later step)
 function VariableActions({
   challenge, onComplete, onAbandon,
 }: {
@@ -471,8 +593,8 @@ function VariableActions({
 }) {
   const [count, setCount] = useState(1);
   return (
-    <div style={{ marginTop: 12 }}>
-      <label style={{ fontSize: 13, opacity: 0.8, display: 'block', marginBottom: 6 }}>
+    <div>
+      <label style={{ fontSize: 13, color: STAT_TEXT, display: 'block', marginBottom: 6 }}>
         How many {challenge.unitLabel}{count === 1 ? '' : 's'}?
       </label>
       <input
@@ -480,29 +602,19 @@ function VariableActions({
         min={1}
         value={count}
         onChange={(e) => setCount(Math.max(1, Number(e.target.value) || 1))}
-        style={{ width: '100%', padding: 8, background: '#2a2a3e', color: 'white', border: '1px solid #444', borderRadius: 4, fontSize: 16, boxSizing: 'border-box' }}
+        style={{ width: '100%', padding: 10, background: '#fafafa', color: CARD_TEXT, border: '1px solid #e0e0e0', borderRadius: 8, fontSize: 16, boxSizing: 'border-box', marginBottom: 10 }}
       />
-      <div style={{ opacity: 0.7, fontSize: 13, margin: '8px 0' }}>
-        = {count * (challenge.tokensPerUnit ?? 0)} tokens
-      </div>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button
-          onClick={() => onComplete(count)}
-          style={{ flex: 1, padding: '12px 10px', background: '#2ecc71', border: 'none', borderRadius: 6, color: 'white', fontWeight: 'bold', fontSize: 15 }}
-        >
-          Claim
-        </button>
-        <button
-          onClick={onAbandon}
-          style={{ flex: 1, padding: '12px 10px', background: '#e74c3c', border: 'none', borderRadius: 6, color: 'white', fontSize: 15 }}
-        >
-          Abandon
-        </button>
-      </div>
+      <ButtonPair>
+        <GreyButton onClick={onAbandon}>Give Up</GreyButton>
+        <OrangeButton onClick={() => onComplete(count)}>
+          <ClaimIcon size={16} /> Claim
+        </OrangeButton>
+      </ButtonPair>
     </div>
   );
 }
 
+// Wager setup: inline amount picker (sub-view comes in a later step)
 function WagerSetup({
   tokens, onSetWager, onAbandon,
 }: {
@@ -514,55 +626,37 @@ function WagerSetup({
   const [amount, setAmount] = useState(Math.min(10, max));
   const canWager = tokens >= 1;
 
+  if (!canWager) {
+    return (
+      <div>
+        <p style={{ margin: '0 0 10px 0', color: STAT_TEXT }}>
+          You need at least 1 token to wager.
+        </p>
+        <GreyButton onClick={onAbandon}>Give Up</GreyButton>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ marginTop: 12 }}>
-      {canWager ? (
-        <>
-          <label style={{ fontSize: 13, opacity: 0.8, display: 'block', marginBottom: 6 }}>
-            Wager amount (max {tokens})
-          </label>
-          <input
-            type="range"
-            min={1}
-            max={max}
-            value={amount}
-            onChange={(e) => setAmount(Number(e.target.value))}
-            style={{ width: '100%' }}
-          />
-          <div style={{ textAlign: 'center', fontSize: 24, fontWeight: 'bold', margin: '4px 0' }}>
-            {amount}
-          </div>
-          <div style={{ opacity: 0.6, fontSize: 12, textAlign: 'center', margin: '0 0 10px 0' }}>
-            Pass: +{amount * 2} · Fail: −{amount}
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              onClick={() => onSetWager(amount)}
-              style={{ flex: 1, padding: '12px 10px', background: '#9b59b6', border: 'none', borderRadius: 6, color: 'white', fontWeight: 'bold', fontSize: 15 }}
-            >
-              Lock in wager
-            </button>
-            <button
-              onClick={onAbandon}
-              style={{ flex: 1, padding: '12px 10px', background: '#e74c3c', border: 'none', borderRadius: 6, color: 'white', fontSize: 15 }}
-            >
-              Abandon
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <p style={{ opacity: 0.7, margin: '0 0 8px 0' }}>
-            You need at least 1 token to wager.
-          </p>
-          <button
-            onClick={onAbandon}
-            style={{ width: '100%', padding: '12px 10px', background: '#e74c3c', border: 'none', borderRadius: 6, color: 'white', fontSize: 15 }}
-          >
-            Abandon
-          </button>
-        </>
-      )}
+    <div>
+      <label style={{ fontSize: 13, color: STAT_TEXT, display: 'block', marginBottom: 6 }}>
+        Wager amount (max {tokens})
+      </label>
+      <input
+        type="range"
+        min={1}
+        max={max}
+        value={amount}
+        onChange={(e) => setAmount(Number(e.target.value))}
+        style={{ width: '100%' }}
+      />
+      <div style={{ textAlign: 'center', fontSize: 28, fontWeight: 700, margin: '4px 0 12px', color: CARD_TEXT }}>
+        {amount}
+      </div>
+      <ButtonPair>
+        <GreyButton onClick={onAbandon}>Back</GreyButton>
+        <OrangeButton onClick={() => onSetWager(amount)}>Confirm</OrangeButton>
+      </ButtonPair>
     </div>
   );
 }
