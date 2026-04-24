@@ -221,6 +221,31 @@ export default function GamePage() {
     if (selectedChallengeId && !challenges[selectedChallengeId]) setSelectedChallengeId(null);
   }, [challenges, selectedChallengeId]);
 
+  // Auto-open the card when entering a pin's proximity. Fires when a new pin
+  // crosses into range — never reopens a pin the user already closed without
+  // leaving range first. Skipped entirely while a sheet is already open.
+  const autoOpenPinRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!myPos) return;
+
+    let closest: { id: string; dist: number } | null = null;
+    for (const c of Object.values(challenges)) {
+      if (c.status !== 'active') continue;
+      const d = distanceMeters(myPos.lat, myPos.lng, c.lat, c.lng);
+      if (d <= c.proximityMeters && (!closest || d < closest.dist)) {
+        closest = { id: c.id, dist: d };
+      }
+    }
+
+    const newId = closest?.id ?? null;
+    const prevId = autoOpenPinRef.current;
+
+    if (newId && newId !== prevId && !selectedChallengeId) {
+      setSelectedChallengeId(newId);
+    }
+    autoOpenPinRef.current = newId;
+  }, [myPos, challenges, selectedChallengeId]);
+
   // ── Action handlers ──
   const handleAccept = useCallback(() => {
     if (!selectedChallenge || !teamId) return;
