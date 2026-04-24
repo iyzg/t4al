@@ -243,6 +243,15 @@ export default function GamePage() {
     emitWager(activeChallengeId, teamId, amount);
   }, [activeChallengeId, teamId]);
 
+  // Atomic accept + set-wager from the wager-setup sub-view. Used before the
+  // challenge is this team's active one, so activeChallengeId isn't set yet —
+  // we emit accept and wager with the selectedChallenge.id directly.
+  const handleAcceptAndWager = useCallback((amount: number) => {
+    if (!selectedChallenge || !teamId) return;
+    emitAccept(selectedChallenge.id, teamId);
+    emitWager(selectedChallenge.id, teamId, amount);
+  }, [selectedChallenge, teamId]);
+
   const handleFailWager = useCallback(() => {
     if (!activeChallengeId || !teamId) return;
     emitFail(activeChallengeId, teamId);
@@ -299,6 +308,7 @@ export default function GamePage() {
           onAbandon={handleAbandon}
           onComplete={handleComplete}
           onSetWager={handleSetWager}
+          onAcceptAndWager={handleAcceptAndWager}
           onFailWager={handleFailWager}
         />
       )}
@@ -331,6 +341,7 @@ interface ChallengeCardProps {
   onAbandon: () => void;
   onComplete: (count?: number) => void;
   onSetWager: (amount: number) => void;
+  onAcceptAndWager: (amount: number) => void;
   onFailWager: () => void;
 }
 
@@ -363,7 +374,7 @@ function ChallengeCard(props: ChallengeCardProps) {
   const {
     challenge: c, descriptionVisible, distance, inRange, isMyActive,
     activeChallengeId, wagerAmount, tokens, expireMinutes,
-    onClose, onAccept, onAbandon, onComplete, onSetWager, onFailWager,
+    onClose, onAccept, onAbandon, onComplete, onSetWager, onAcceptAndWager, onFailWager,
   } = props;
 
   const now = useNowTick(1000);
@@ -373,11 +384,25 @@ function ChallengeCard(props: ChallengeCardProps) {
   const distanceText = distance != null ? formatBlocks(distance) : '—';
   const pts = pointsDisplay(c, wagerAmount, isMyActive);
 
-  // Sub-views that temporarily replace the card body (score-entry for variable,
-  // wager-setup for wager). Reset if we lose active state or switch pins.
-  const [subView, setSubView] = useState<null | 'score-entry'>(null);
-  useEffect(() => { if (!isMyActive) setSubView(null); }, [isMyActive]);
+  // Sub-views that temporarily replace the card body.
+  //   score-entry: variable challenge Claim — count picker before submit
+  //   wager-setup: wager challenge — pick amount before accept+wager fires
+  const [subView, setSubView] = useState<null | 'score-entry' | 'wager-setup'>(null);
+
+  // Reset on challenge switch.
   useEffect(() => { setSubView(null); }, [c.id]);
+
+  // Score-entry: close if we lost the active challenge (yanked or expired).
+  useEffect(() => {
+    if (subView === 'score-entry' && !isMyActive) setSubView(null);
+  }, [subView, isMyActive]);
+
+  // Also show wager-setup when reconnecting to a wager challenge that has no
+  // amount set yet — derived in render so there's no flash of the main card.
+  const showWagerSetup = c.type === 'wager' && (
+    subView === 'wager-setup' ||
+    (isMyActive && wagerAmount == null)
+  );
 
   if (subView === 'score-entry' && c.type === 'variable') {
     return (
@@ -386,6 +411,25 @@ function ChallengeCard(props: ChallengeCardProps) {
         onClose={onClose}
         onBack={() => setSubView(null)}
         onSubmit={(count) => { onComplete(count); setSubView(null); }}
+      />
+    );
+  }
+
+  if (showWagerSetup) {
+    return (
+      <WagerSetupView
+        challenge={c}
+        tokens={tokens}
+        alreadyAccepted={isMyActive}
+        onClose={onClose}
+        onBack={() => {
+          if (isMyActive) onAbandon();
+          setSubView(null);
+        }}
+        onConfirm={(amount) => {
+          if (isMyActive) onSetWager(amount);
+          else onAcceptAndWager(amount);
+        }}
       />
     );
   }
@@ -427,11 +471,8 @@ function ChallengeCard(props: ChallengeCardProps) {
         {isMyActive
           ? <ActiveActions
               challenge={c}
-              wagerAmount={wagerAmount}
-              tokens={tokens}
               onAbandon={onAbandon}
               onComplete={onComplete}
-              onSetWager={onSetWager}
               onFailWager={onFailWager}
               onEnterScoreEntry={() => setSubView('score-entry')}
             />
@@ -442,7 +483,7 @@ function ChallengeCard(props: ChallengeCardProps) {
             : <ActivationButton
                 type={c.type}
                 disabled={!inRange}
-                onClick={onAccept}
+                onClick={c.type === 'wager' ? () => setSubView('wager-setup') : onAccept}
               />
         }
       </div>
@@ -495,15 +536,12 @@ function ActivationButton({
 
 function ActiveActions(props: {
   challenge: Challenge;
-  wagerAmount: number | null;
-  tokens: number;
   onAbandon: () => void;
   onComplete: (count?: number) => void;
-  onSetWager: (amount: number) => void;
   onFailWager: () => void;
   onEnterScoreEntry: () => void;
 }) {
-  const { challenge, wagerAmount, tokens, onAbandon, onComplete, onSetWager, onFailWager, onEnterScoreEntry } = props;
+  const { challenge, onAbandon, onComplete, onFailWager, onEnterScoreEntry } = props;
 
   if (challenge.type === 'normal') {
     return (
@@ -528,10 +566,8 @@ function ActiveActions(props: {
     );
   }
 
-  // Wager
-  if (wagerAmount == null) {
-    return <WagerSetup tokens={tokens} onSetWager={onSetWager} onAbandon={onAbandon} />;
-  }
+  // Wager: amount-set state only. The amount-null state is handled by the
+  // wager-setup sub-view at the ChallengeCard level, so it never reaches here.
   return (
     <ButtonPair>
       <GreyHoldButton onComplete={onFailWager} ariaLabel="Hold to fail">Fail</GreyHoldButton>
@@ -767,49 +803,63 @@ function Stepper({
   );
 }
 
-// Wager setup: inline amount picker (sub-view comes in a later step)
-function WagerSetup({
-  tokens, onSetWager, onAbandon,
+// Sub-view for wager challenges. Opens when the user taps the Wager activation
+// button (pre-accept) or when reconnecting to an accepted wager without an
+// amount yet. Confirm emits accept+wager atomically for the pre-accept case,
+// or wager-only for the reconnect case.
+function WagerSetupView({
+  challenge, tokens, alreadyAccepted, onClose, onBack, onConfirm,
 }: {
+  challenge: Challenge;
   tokens: number;
-  onSetWager: (amount: number) => void;
-  onAbandon: () => void;
+  alreadyAccepted: boolean;
+  onClose: () => void;
+  onBack: () => void;
+  onConfirm: (amount: number) => void;
 }) {
   const max = Math.max(1, tokens);
   const [amount, setAmount] = useState(Math.min(10, max));
   const canWager = tokens >= 1;
 
-  if (!canWager) {
-    return (
-      <div>
-        <p style={{ margin: '0 0 10px 0', color: STAT_TEXT }}>
-          You need at least 1 token to wager.
-        </p>
-        <GreyButton onClick={onAbandon}>Give Up</GreyButton>
-      </div>
-    );
-  }
-
   return (
-    <div>
-      <label style={{ fontSize: 14, color: STAT_TEXT, display: 'block', marginBottom: 6 }}>
-        Wager amount (max {tokens})
-      </label>
-      <input
-        type="range"
-        min={1}
-        max={max}
-        value={amount}
-        onChange={(e) => setAmount(Number(e.target.value))}
-        style={{ width: '100%' }}
-      />
-      <div style={{ textAlign: 'center', fontSize: 14, fontWeight: 700, margin: '4px 0 12px', color: CARD_TEXT }}>
-        {amount}
-      </div>
-      <ButtonPair>
-        <GreyButton onClick={onAbandon}>Back</GreyButton>
-        <OrangeButton onClick={() => onSetWager(amount)}>Confirm</OrangeButton>
-      </ButtonPair>
+    <div className="challenge-card" style={cardShellStyle()}>
+      <CardHeader title={challenge.name} onClose={onClose} />
+
+      {!canWager ? (
+        <div style={{ padding: '24px 0' }}>
+          <p style={{ margin: '0 0 14px 0', color: STAT_TEXT, textAlign: 'center' }}>
+            You need at least 1 chip to wager.
+          </p>
+          <GreyButton onClick={onBack}>Back</GreyButton>
+        </div>
+      ) : (
+        <>
+          <div style={{ textAlign: 'center', padding: '18px 0 14px' }}>
+            <div style={{ fontSize: 14, color: STAT_TEXT, marginBottom: 10 }}>
+              How many chips to wager?
+            </div>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 24 }}>
+              <Stepper onClick={() => setAmount(Math.max(1, amount - 1))} disabled={amount <= 1}>−</Stepper>
+              <span style={{ fontSize: 40, fontWeight: 700, minWidth: 70, textAlign: 'center' }}>{amount}</span>
+              <Stepper onClick={() => setAmount(Math.min(max, amount + 1))} disabled={amount >= max}>+</Stepper>
+            </div>
+            <div style={{ fontSize: 14, color: STAT_TEXT, marginTop: 10 }}>
+              Balance: {tokens}
+            </div>
+          </div>
+
+          <ButtonPair>
+            <GreyButton onClick={onBack}>Back</GreyButton>
+            <OrangeButton onClick={() => onConfirm(amount)}>Confirm</OrangeButton>
+          </ButtonPair>
+
+          {alreadyAccepted && (
+            <div style={{ fontSize: 12, color: STAT_TEXT, textAlign: 'center', marginTop: 10 }}>
+              Back will abandon (no amount set yet).
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
