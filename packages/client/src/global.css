@@ -54,14 +54,6 @@ button {
   }
 }
 
-/* Game page challenge card: full width on tiny screens */
-@media (max-width: 480px) {
-  .challenge-card {
-    left: 8px !important;
-    right: 8px !important;
-    max-width: none !important;
-  }
-}
 
 /* Click-feedback pop for challenge pins. The chip is an SVG <g> whose
    content is drawn at (0,0) in user coords, so `transform-origin: 0 0`
