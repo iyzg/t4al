@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import maplibregl from 'maplibre-gl';
 import { getMapStyle, CHICAGO_CENTER, CHICAGO_BOUNDS, DEFAULT_ZOOM, MIN_ZOOM, MAX_ZOOM } from '../mapStyle';
@@ -389,7 +389,7 @@ function ChallengeCard(props: ChallengeCardProps) {
     >
       {/* Title + X */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, flex: 1, lineHeight: 1.3, color: CARD_TEXT }}>
+        <h3 style={{ margin: 0, fontSize: 20, fontWeight: 700, flex: 1, lineHeight: 1.2, color: CARD_TEXT }}>
           {c.name}
         </h3>
         <button
@@ -412,7 +412,21 @@ function ChallengeCard(props: ChallengeCardProps) {
       </div>
 
       {/* Description — literal text, rendered in Flow Block font until in range */}
-      <DescriptionText text={c.description} visible={descriptionVisible} />
+      <div
+        className={descriptionVisible ? undefined : 'font-flow'}
+        style={{
+          marginTop: 14,
+          height: 108,
+          overflowY: 'auto',
+          fontSize: 14,
+          lineHeight: 1.5,
+          color: CARD_TEXT,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+        }}
+      >
+        {c.description}
+      </div>
 
       {/* CTA area */}
       <div style={{ marginTop: 18 }}>
@@ -450,63 +464,6 @@ function StatChip({ icon, label }: { icon: React.ReactNode; label: string }) {
   );
 }
 
-// Description area. Literal text; characters render in Flow Block font while hidden.
-// When `visible` flips true, characters flip to normal font in a random order over ~400ms.
-const DESCRIPTION_REVEAL_MS = 400;
-
-function DescriptionText({ text, visible }: { text: string; visible: boolean }) {
-  const chars = useMemo(() => Array.from(text), [text]);
-  const N = chars.length;
-
-  // revealStep[i] = order position at which char i gets revealed
-  const revealStep = useMemo(() => {
-    const perm = Array.from({ length: N }, (_, i) => i);
-    for (let i = perm.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [perm[i], perm[j]] = [perm[j], perm[i]];
-    }
-    const step = new Array<number>(N);
-    perm.forEach((charIdx, stepIdx) => { step[charIdx] = stepIdx; });
-    return step;
-  }, [text, N]);
-
-  const [progress, setProgress] = useState(visible ? N : 0);
-
-  useEffect(() => {
-    if (!visible) { setProgress(0); return; }
-    if (N === 0)  { setProgress(0); return; }
-    const start = performance.now();
-    let raf = 0;
-    const tick = (now: number) => {
-      const t = Math.min(1, (now - start) / DESCRIPTION_REVEAL_MS);
-      setProgress(Math.ceil(t * N));
-      if (t < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [visible, N]);
-
-  return (
-    <div
-      style={{
-        marginTop: 14,
-        height: 108,
-        overflowY: 'auto',
-        fontSize: 14,
-        lineHeight: 1.5,
-        color: CARD_TEXT,
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-      }}
-    >
-      {chars.map((ch, i) => (
-        <span key={i} className={revealStep[i] < progress ? undefined : 'font-flow'}>
-          {ch}
-        </span>
-      ))}
-    </div>
-  );
-}
 
 function ActivationButton({
   type, disabled, onClick,
