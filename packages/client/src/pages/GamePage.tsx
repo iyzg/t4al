@@ -18,6 +18,7 @@ import type { Challenge, TeamSnapshot } from '@t4al/shared';
 import GameHUD from '../components/GameHUD';
 import Toast from '../components/Toast';
 import { TokensIcon, ClockIcon, LocationIcon, StartIcon, ClaimIcon, WagerIcon } from '../components/icons';
+import PressHold from '../components/PressHold';
 import { formatBlocks } from '../lib/distance';
 
 ensurePmtilesProtocol();
@@ -234,7 +235,6 @@ export default function GamePage() {
 
   const handleComplete = useCallback((count?: number) => {
     if (!activeChallengeId || !teamId) return;
-    if (!confirm('Are you sure you completed this challenge?')) return;
     emitComplete(activeChallengeId, teamId, count);
   }, [activeChallengeId, teamId]);
 
@@ -245,7 +245,6 @@ export default function GamePage() {
 
   const handleFailWager = useCallback(() => {
     if (!activeChallengeId || !teamId) return;
-    if (!confirm('Confirm: you failed this wager? Your tokens will be deducted.')) return;
     emitFail(activeChallengeId, teamId);
   }, [activeChallengeId, teamId]);
 
@@ -513,9 +512,9 @@ function ActiveActions(props: {
     return (
       <ButtonPair>
         <GreyButton onClick={onAbandon}>Give Up</GreyButton>
-        <OrangeButton onClick={() => onComplete()}>
+        <OrangeHoldButton onComplete={() => onComplete()} ariaLabel="Hold to claim">
           <ClaimIcon size={16} /> Claim
-        </OrangeButton>
+        </OrangeHoldButton>
       </ButtonPair>
     );
   }
@@ -530,10 +529,10 @@ function ActiveActions(props: {
   }
   return (
     <ButtonPair>
-      <GreyButton onClick={onFailWager}>Fail</GreyButton>
-      <OrangeButton onClick={() => onComplete()}>
+      <GreyHoldButton onComplete={onFailWager} ariaLabel="Hold to fail">Fail</GreyHoldButton>
+      <OrangeHoldButton onComplete={() => onComplete()} ariaLabel="Hold to claim success">
         <ClaimIcon size={16} /> Success
-      </OrangeButton>
+      </OrangeHoldButton>
     </ButtonPair>
   );
 }
@@ -582,6 +581,62 @@ function OrangeButton({ onClick, children }: { onClick: () => void; children: Re
     >
       {children}
     </button>
+  );
+}
+
+// Press-and-hold variant: the user must hold for 3s to confirm. Fill bar animates
+// across the button as they hold and drains if they release early.
+function OrangeHoldButton({
+  onComplete, children, ariaLabel,
+}: {
+  onComplete: () => void;
+  children: React.ReactNode;
+  ariaLabel?: string;
+}) {
+  return (
+    <PressHold
+      onComplete={onComplete}
+      ariaLabel={ariaLabel}
+      fillColor="rgba(255, 255, 255, 0.28)"
+      idleStyle={{
+        flex: 1,
+        padding: '14px 16px',
+        borderRadius: 12,
+        fontSize: 14,
+        fontWeight: 700,
+        color: 'white',
+        background: ORANGE,
+      }}
+    >
+      {children}
+    </PressHold>
+  );
+}
+
+function GreyHoldButton({
+  onComplete, children, ariaLabel,
+}: {
+  onComplete: () => void;
+  children: React.ReactNode;
+  ariaLabel?: string;
+}) {
+  return (
+    <PressHold
+      onComplete={onComplete}
+      ariaLabel={ariaLabel}
+      fillColor="rgba(0, 0, 0, 0.12)"
+      idleStyle={{
+        flex: 1,
+        padding: '14px 16px',
+        borderRadius: 12,
+        fontSize: 14,
+        fontWeight: 600,
+        color: GREY_BTN_TEXT,
+        background: GREY_BTN,
+      }}
+    >
+      {children}
+    </PressHold>
   );
 }
 
