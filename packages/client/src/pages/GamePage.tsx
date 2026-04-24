@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import maplibregl from 'maplibre-gl';
 import { getMapStyle, CHICAGO_CENTER, CHICAGO_BOUNDS, DEFAULT_ZOOM, MIN_ZOOM, MAX_ZOOM } from '../mapStyle';
@@ -384,11 +384,12 @@ function ChallengeCard(props: ChallengeCardProps) {
         padding: '20px 20px 28px',
         maxWidth: 480, margin: '0 auto',
         boxShadow: '0 -8px 32px rgba(0,0,0,0.18)',
+        fontSize: 14,
       }}
     >
       {/* Title + X */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-        <h3 style={{ margin: 0, fontSize: 20, fontWeight: 700, flex: 1, lineHeight: 1.2, color: CARD_TEXT }}>
+        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, flex: 1, lineHeight: 1.3, color: CARD_TEXT }}>
           {c.name}
         </h3>
         <button
@@ -396,7 +397,7 @@ function ChallengeCard(props: ChallengeCardProps) {
           aria-label="Close"
           style={{
             background: 'none', border: 'none', cursor: 'pointer',
-            fontSize: 22, color: CARD_TEXT, padding: 0, lineHeight: 1, marginTop: -2,
+            fontSize: 14, color: CARD_TEXT, padding: 0, lineHeight: 1, marginTop: -2,
           }}
         >
           ×
@@ -404,28 +405,14 @@ function ChallengeCard(props: ChallengeCardProps) {
       </div>
 
       {/* Stats row */}
-      <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 13, color: STAT_TEXT, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 14, color: STAT_TEXT, alignItems: 'center' }}>
         <StatChip icon={<TokensIcon size={14} />} label={pts} />
         <StatChip icon={<ClockIcon size={14} />} label={countdownText} />
         <StatChip icon={<LocationIcon size={14} />} label={distanceText} />
       </div>
 
       {/* Description — literal text, rendered in Flow Block font until in range */}
-      <div
-        className={descriptionVisible ? undefined : 'font-flow'}
-        style={{
-          marginTop: 14,
-          height: 108,
-          overflowY: 'auto',
-          fontSize: 15,
-          lineHeight: 1.5,
-          color: CARD_TEXT,
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word',
-        }}
-      >
-        {c.description}
-      </div>
+      <DescriptionText text={c.description} visible={descriptionVisible} />
 
       {/* CTA area */}
       <div style={{ marginTop: 18 }}>
@@ -463,6 +450,64 @@ function StatChip({ icon, label }: { icon: React.ReactNode; label: string }) {
   );
 }
 
+// Description area. Literal text; characters render in Flow Block font while hidden.
+// When `visible` flips true, characters flip to normal font in a random order over ~400ms.
+const DESCRIPTION_REVEAL_MS = 400;
+
+function DescriptionText({ text, visible }: { text: string; visible: boolean }) {
+  const chars = useMemo(() => Array.from(text), [text]);
+  const N = chars.length;
+
+  // revealStep[i] = order position at which char i gets revealed
+  const revealStep = useMemo(() => {
+    const perm = Array.from({ length: N }, (_, i) => i);
+    for (let i = perm.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [perm[i], perm[j]] = [perm[j], perm[i]];
+    }
+    const step = new Array<number>(N);
+    perm.forEach((charIdx, stepIdx) => { step[charIdx] = stepIdx; });
+    return step;
+  }, [text, N]);
+
+  const [progress, setProgress] = useState(visible ? N : 0);
+
+  useEffect(() => {
+    if (!visible) { setProgress(0); return; }
+    if (N === 0)  { setProgress(0); return; }
+    const start = performance.now();
+    let raf = 0;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / DESCRIPTION_REVEAL_MS);
+      setProgress(Math.ceil(t * N));
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [visible, N]);
+
+  return (
+    <div
+      style={{
+        marginTop: 14,
+        height: 108,
+        overflowY: 'auto',
+        fontSize: 14,
+        lineHeight: 1.5,
+        color: CARD_TEXT,
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+      }}
+    >
+      {chars.map((ch, i) => (
+        <span key={i} className={revealStep[i] < progress ? undefined : 'font-flow'}>
+          {ch}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function ActivationButton({
   type, disabled, onClick,
 }: {
@@ -482,7 +527,7 @@ function ActivationButton({
         padding: '14px 16px',
         border: 'none',
         borderRadius: 12,
-        fontSize: 16,
+        fontSize: 14,
         fontWeight: 700,
         color: disabled ? '#7a7a7a' : 'white',
         background: disabled ? GREY_BTN : ORANGE,
@@ -549,7 +594,7 @@ function GreyButton({ onClick, children }: { onClick: () => void; children: Reac
         padding: '14px 16px',
         border: 'none',
         borderRadius: 12,
-        fontSize: 16,
+        fontSize: 14,
         fontWeight: 600,
         color: GREY_BTN_TEXT,
         background: GREY_BTN,
@@ -570,7 +615,7 @@ function OrangeButton({ onClick, children }: { onClick: () => void; children: Re
         padding: '14px 16px',
         border: 'none',
         borderRadius: 12,
-        fontSize: 16,
+        fontSize: 14,
         fontWeight: 700,
         color: 'white',
         background: ORANGE,
@@ -594,7 +639,7 @@ function VariableActions({
   const [count, setCount] = useState(1);
   return (
     <div>
-      <label style={{ fontSize: 13, color: STAT_TEXT, display: 'block', marginBottom: 6 }}>
+      <label style={{ fontSize: 14, color: STAT_TEXT, display: 'block', marginBottom: 6 }}>
         How many {challenge.unitLabel}{count === 1 ? '' : 's'}?
       </label>
       <input
@@ -602,7 +647,7 @@ function VariableActions({
         min={1}
         value={count}
         onChange={(e) => setCount(Math.max(1, Number(e.target.value) || 1))}
-        style={{ width: '100%', padding: 10, background: '#fafafa', color: CARD_TEXT, border: '1px solid #e0e0e0', borderRadius: 8, fontSize: 16, boxSizing: 'border-box', marginBottom: 10 }}
+        style={{ width: '100%', padding: 10, background: '#fafafa', color: CARD_TEXT, border: '1px solid #e0e0e0', borderRadius: 8, fontSize: 14, boxSizing: 'border-box', marginBottom: 10 }}
       />
       <ButtonPair>
         <GreyButton onClick={onAbandon}>Give Up</GreyButton>
@@ -639,7 +684,7 @@ function WagerSetup({
 
   return (
     <div>
-      <label style={{ fontSize: 13, color: STAT_TEXT, display: 'block', marginBottom: 6 }}>
+      <label style={{ fontSize: 14, color: STAT_TEXT, display: 'block', marginBottom: 6 }}>
         Wager amount (max {tokens})
       </label>
       <input
@@ -650,7 +695,7 @@ function WagerSetup({
         onChange={(e) => setAmount(Number(e.target.value))}
         style={{ width: '100%' }}
       />
-      <div style={{ textAlign: 'center', fontSize: 28, fontWeight: 700, margin: '4px 0 12px', color: CARD_TEXT }}>
+      <div style={{ textAlign: 'center', fontSize: 14, fontWeight: 700, margin: '4px 0 12px', color: CARD_TEXT }}>
         {amount}
       </div>
       <ButtonPair>
