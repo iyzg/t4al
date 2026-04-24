@@ -373,35 +373,30 @@ function ChallengeCard(props: ChallengeCardProps) {
   const distanceText = distance != null ? formatBlocks(distance) : '—';
   const pts = pointsDisplay(c, wagerAmount, isMyActive);
 
+  // Sub-views that temporarily replace the card body (score-entry for variable,
+  // wager-setup for wager). Reset if we lose active state or switch pins.
+  const [subView, setSubView] = useState<null | 'score-entry'>(null);
+  useEffect(() => { if (!isMyActive) setSubView(null); }, [isMyActive]);
+  useEffect(() => { setSubView(null); }, [c.id]);
+
+  if (subView === 'score-entry' && c.type === 'variable') {
+    return (
+      <ScoreEntryView
+        challenge={c}
+        onClose={onClose}
+        onBack={() => setSubView(null)}
+        onSubmit={(count) => { onComplete(count); setSubView(null); }}
+      />
+    );
+  }
+
   return (
     <div
       className="challenge-card"
-      style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0,
-        background: CARD_BG, color: CARD_TEXT,
-        borderTopLeftRadius: 18, borderTopRightRadius: 18,
-        padding: '20px 20px 28px',
-        maxWidth: 480, margin: '0 auto',
-        boxShadow: '0 -8px 32px rgba(0,0,0,0.18)',
-        fontSize: 14,
-      }}
+      style={cardShellStyle()}
     >
       {/* Title + X */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-        <h3 style={{ margin: 0, fontSize: 20, fontWeight: 700, flex: 1, lineHeight: 1.2, color: CARD_TEXT }}>
-          {c.name}
-        </h3>
-        <button
-          onClick={onClose}
-          aria-label="Close"
-          style={{
-            background: 'none', border: 'none', cursor: 'pointer',
-            fontSize: 14, color: CARD_TEXT, padding: 0, lineHeight: 1, marginTop: -2,
-          }}
-        >
-          ×
-        </button>
-      </div>
+      <CardHeader title={c.name} onClose={onClose} />
 
       {/* Stats row */}
       <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 14, color: STAT_TEXT, alignItems: 'center' }}>
@@ -438,6 +433,7 @@ function ChallengeCard(props: ChallengeCardProps) {
               onComplete={onComplete}
               onSetWager={onSetWager}
               onFailWager={onFailWager}
+              onEnterScoreEntry={() => setSubView('score-entry')}
             />
           : activeChallengeId
             ? <div style={{ textAlign: 'center', color: STAT_TEXT, padding: '12px 8px' }}>
@@ -505,8 +501,9 @@ function ActiveActions(props: {
   onComplete: (count?: number) => void;
   onSetWager: (amount: number) => void;
   onFailWager: () => void;
+  onEnterScoreEntry: () => void;
 }) {
-  const { challenge, wagerAmount, tokens, onAbandon, onComplete, onSetWager, onFailWager } = props;
+  const { challenge, wagerAmount, tokens, onAbandon, onComplete, onSetWager, onFailWager, onEnterScoreEntry } = props;
 
   if (challenge.type === 'normal') {
     return (
@@ -520,7 +517,15 @@ function ActiveActions(props: {
   }
 
   if (challenge.type === 'variable') {
-    return <VariableActions challenge={challenge} onComplete={onComplete} onAbandon={onAbandon} />;
+    // Tap Claim to open the score-entry sub-view — the sub-view's Claim is the 3s hold.
+    return (
+      <ButtonPair>
+        <GreyButton onClick={onAbandon}>Give Up</GreyButton>
+        <OrangeButton onClick={onEnterScoreEntry}>
+          <ClaimIcon size={16} /> Claim
+        </OrangeButton>
+      </ButtonPair>
+    );
   }
 
   // Wager
@@ -640,34 +645,125 @@ function GreyHoldButton({
   );
 }
 
-// Variable: inline count input (sub-view comes in a later step)
-function VariableActions({
-  challenge, onComplete, onAbandon,
+// Shared card shell styles so the score-entry sub-view matches the main card.
+function cardShellStyle(): React.CSSProperties {
+  return {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    background: CARD_BG, color: CARD_TEXT,
+    borderTopLeftRadius: 18, borderTopRightRadius: 18,
+    padding: '20px 20px 28px',
+    maxWidth: 480, margin: '0 auto',
+    boxShadow: '0 -8px 32px rgba(0,0,0,0.18)',
+    fontSize: 14,
+  };
+}
+
+function CardHeader({ title, onClose }: { title: string; onClose: () => void }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+      <h3 style={{ margin: 0, fontSize: 20, fontWeight: 700, flex: 1, lineHeight: 1.2, color: CARD_TEXT }}>
+        {title}
+      </h3>
+      <button
+        onClick={onClose}
+        aria-label="Close"
+        style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          fontSize: 14, color: CARD_TEXT, padding: 0, lineHeight: 1, marginTop: -2,
+        }}
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+// Sub-view for variable challenges. Opens when the user taps Claim on a variable
+// challenge; replaces the main card body with a count picker and a press-and-hold
+// Claim button.
+function ScoreEntryView({
+  challenge, onClose, onBack, onSubmit,
 }: {
   challenge: Challenge;
-  onComplete: (count?: number) => void;
-  onAbandon: () => void;
+  onClose: () => void;
+  onBack: () => void;
+  onSubmit: (count: number) => void;
 }) {
   const [count, setCount] = useState(1);
+  const per = challenge.tokensPerUnit ?? 0;
+  const unit = challenge.unitLabel ?? 'unit';
+  const unitPlural = count === 1 ? unit : `${unit}s`;
+  const total = count * per;
+
   return (
-    <div>
-      <label style={{ fontSize: 14, color: STAT_TEXT, display: 'block', marginBottom: 6 }}>
-        How many {challenge.unitLabel}{count === 1 ? '' : 's'}?
-      </label>
-      <input
-        type="number"
-        min={1}
-        value={count}
-        onChange={(e) => setCount(Math.max(1, Number(e.target.value) || 1))}
-        style={{ width: '100%', padding: 10, background: '#fafafa', color: CARD_TEXT, border: '1px solid #e0e0e0', borderRadius: 8, fontSize: 14, boxSizing: 'border-box', marginBottom: 10 }}
-      />
+    <div className="challenge-card" style={cardShellStyle()}>
+      <CardHeader title={challenge.name} onClose={onClose} />
+
+      {/* Rate subtitle */}
+      <div style={{ color: ORANGE, fontSize: 14, fontWeight: 600, marginTop: 2 }}>
+        {per} pts / {unit}
+      </div>
+
+      {/* Count picker */}
+      <div style={{ textAlign: 'center', padding: '18px 0 14px' }}>
+        <div style={{ fontSize: 14, color: STAT_TEXT, marginBottom: 10 }}>
+          How many {unitPlural}?
+        </div>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 24 }}>
+          <Stepper onClick={() => setCount(Math.max(1, count - 1))} disabled={count <= 1}>−</Stepper>
+          <span style={{ fontSize: 40, fontWeight: 700, minWidth: 60, textAlign: 'center' }}>{count}</span>
+          <Stepper onClick={() => setCount(count + 1)}>+</Stepper>
+        </div>
+      </div>
+
+      {/* Preview pill */}
+      <div style={{
+        background: '#FBEFE1',
+        padding: '12px 16px',
+        borderRadius: 10,
+        marginBottom: 16,
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        color: CARD_TEXT,
+      }}>
+        <span>{count} x {per} pts</span>
+        <strong style={{ color: ORANGE }}>= {total} pts</strong>
+      </div>
+
       <ButtonPair>
-        <GreyButton onClick={onAbandon}>Give Up</GreyButton>
-        <OrangeButton onClick={() => onComplete(count)}>
+        <GreyButton onClick={onBack}>Back</GreyButton>
+        <OrangeHoldButton onComplete={() => onSubmit(count)} ariaLabel="Hold to claim">
           <ClaimIcon size={16} /> Claim
-        </OrangeButton>
+        </OrangeHoldButton>
       </ButtonPair>
     </div>
+  );
+}
+
+function Stepper({
+  onClick, disabled, children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        width: 40, height: 40,
+        borderRadius: 999,
+        border: '1px solid #D0D0D0',
+        background: 'white',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.4 : 1,
+        fontSize: 22, fontWeight: 400, color: '#333',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        padding: 0,
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
