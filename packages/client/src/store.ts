@@ -41,7 +41,7 @@ export interface GameStore {
 
   // Ephemeral UI state
   toast:         { message: string; kind: 'error' | 'info' } | null;
-  acceptedLocally: Set<string>;  // challengeIds we've accepted since last map reset
+  startedLocally: Set<string>;  // challengeIds we've started since last map reset
                                   // (used so description stays revealed after walking out of range)
 
   // ── Setters / reducers ──
@@ -56,15 +56,15 @@ export interface GameStore {
   challengeSpawned:      (challenge: Challenge) => void;
   challengeClaimed:      (challengeId: string, teamId: string, tokensAwarded: number) => void;
   challengeExpired:      (challengeId: string) => void;
-  challengeAcceptedBy:   (challengeId: string, teamId: string) => void;
+  challengeStartedBy:   (challengeId: string, teamId: string) => void;
   challengeAbandonedBy:  (challengeId: string, teamId: string) => void;
   challengeWagerFailedBy:(challengeId: string, teamId: string) => void;
   leaderboardUpdated:    (teams: LeaderboardEntry[]) => void;
   gameStarted:           (game: Game, challenges: Challenge[]) => void;
   gameEnded:             (finalStandings: LeaderboardEntry[]) => void;
 
-  markAcceptedLocally:   (challengeId: string) => void;
-  clearAcceptedLocally:  (challengeId: string) => void;
+  markStartedLocally:   (challengeId: string) => void;
+  clearStartedLocally:  (challengeId: string) => void;
 
   showToast:             (message: string, kind?: 'error' | 'info') => void;
   dismissToast:          () => void;
@@ -93,7 +93,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
   myLocation: null,
 
   toast: null,
-  acceptedLocally: new Set(),
+  startedLocally: new Set(),
 
   setIdentity: ({ gameId, teamId, teamColor, deviceId }) =>
     set({ gameId, teamId, teamColor, deviceId, isAdmin: false }),
@@ -105,7 +105,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
       game: null, gameStatus: null, finalStandings: null,
       challenges: {}, leaderboard: [], teamSnapshots: [],
       tokens: 0, activeChallengeId: null, wagerAmount: null,
-      acceptedLocally: new Set(),
+      startedLocally: new Set(),
     }),
 
   setAdminCode: (code) => set({ adminCode: code, isAdmin: code != null }),
@@ -151,12 +151,12 @@ export const useGameStore = create<GameStore>()((set, get) => ({
         if (t.id === teamId) return { ...t, tokens: t.tokens + tokensAwarded };
         return t;
       });
-      const acceptedLocally = new Set(s.acceptedLocally);
-      acceptedLocally.delete(challengeId);
+      const startedLocally = new Set(s.startedLocally);
+      startedLocally.delete(challengeId);
       return {
         challenges: rest,
         teamSnapshots,
-        acceptedLocally,
+        startedLocally,
       };
     }),
 
@@ -166,12 +166,12 @@ export const useGameStore = create<GameStore>()((set, get) => ({
       const teamSnapshots = s.teamSnapshots.map((t) =>
         t.activeChallengeId === challengeId ? { ...t, activeChallengeId: null } : t,
       );
-      const acceptedLocally = new Set(s.acceptedLocally);
-      acceptedLocally.delete(challengeId);
-      return { challenges: rest, teamSnapshots, acceptedLocally };
+      const startedLocally = new Set(s.startedLocally);
+      startedLocally.delete(challengeId);
+      return { challenges: rest, teamSnapshots, startedLocally };
     }),
 
-  challengeAcceptedBy: (challengeId, teamId) =>
+  challengeStartedBy: (challengeId, teamId) =>
     set((s) => ({
       teamSnapshots: s.teamSnapshots.map((t) =>
         t.id === teamId ? { ...t, activeChallengeId: challengeId } : t,
@@ -215,18 +215,18 @@ export const useGameStore = create<GameStore>()((set, get) => ({
   gameEnded: (finalStandings) =>
     set({ gameStatus: 'ended', finalStandings, leaderboard: finalStandings }),
 
-  markAcceptedLocally: (challengeId) =>
+  markStartedLocally: (challengeId) =>
     set((s) => {
-      const next = new Set(s.acceptedLocally);
+      const next = new Set(s.startedLocally);
       next.add(challengeId);
-      return { acceptedLocally: next };
+      return { startedLocally: next };
     }),
 
-  clearAcceptedLocally: (challengeId) =>
+  clearStartedLocally: (challengeId) =>
     set((s) => {
-      const next = new Set(s.acceptedLocally);
+      const next = new Set(s.startedLocally);
       next.delete(challengeId);
-      return { acceptedLocally: next };
+      return { startedLocally: next };
     }),
 
   showToast: (message, kind = 'error') => set({ toast: { message, kind } }),

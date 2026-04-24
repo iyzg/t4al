@@ -74,7 +74,7 @@ export type GameEventType =
   | 'team:created'
   | 'team:reassigned'
   | 'challenge:spawned'
-  | 'challenge:accepted'
+  | 'challenge:started'
   | 'challenge:abandoned'
   | 'challenge:claimed'
   | 'challenge:expired'

@@ -1,5 +1,5 @@
 // Socket-level V2 tests.
-// Covers: accept → complete → tokens awarded, ack semantics, wager pass/fail.
+// Covers: start → complete → tokens awarded, ack semantics, wager pass/fail.
 //
 // Uses socket.io-client directly (no browser) so we can exercise the raw protocol.
 
@@ -69,12 +69,12 @@ function emitAck<T>(socket: Socket, event: string, payload: any): Promise<T> {
 }
 
 test.describe('Socket flows', () => {
-  test('normal: accept → complete awards tokens', async () => {
+  test('normal: start → complete awards tokens', async () => {
     const { game, team, challenge, hdr } = await setupGame({ challengeType: 'normal', tokens: 25 });
     const s = await connectAsPlayer(game.id, team.id, 'dev-1');
 
-    const accept: any = await emitAck(s, 'challenge:accept', { challengeId: challenge.id, teamId: team.id });
-    expect(accept.ok).toBe(true);
+    const start: any = await emitAck(s, 'challenge:start', { challengeId: challenge.id, teamId: team.id });
+    expect(start.ok).toBe(true);
 
     const complete: any = await emitAck(s, 'challenge:complete', { challengeId: challenge.id, teamId: team.id });
     expect(complete.ok).toBe(true);
@@ -93,8 +93,8 @@ test.describe('Socket flows', () => {
     });
     const s = await connectAsPlayer(game.id, team.id, 'dev-2');
 
-    const accept: any = await emitAck(s, 'challenge:accept', { challengeId: challenge.id, teamId: team.id });
-    expect(accept.ok).toBe(true);
+    const start: any = await emitAck(s, 'challenge:start', { challengeId: challenge.id, teamId: team.id });
+    expect(start.ok).toBe(true);
 
     const complete: any = await emitAck(s, 'challenge:complete', { challengeId: challenge.id, teamId: team.id, count: 6 });
     expect(complete.ok).toBe(true);
@@ -111,7 +111,7 @@ test.describe('Socket flows', () => {
     const { game, team, challenge, hdr } = await setupGame({ challengeType: 'variable' });
     const s = await connectAsPlayer(game.id, team.id, 'dev-3');
 
-    await emitAck(s, 'challenge:accept', { challengeId: challenge.id, teamId: team.id });
+    await emitAck(s, 'challenge:start', { challengeId: challenge.id, teamId: team.id });
     const complete: any = await emitAck(s, 'challenge:complete', { challengeId: challenge.id, teamId: team.id, count: 0 });
     expect(complete.ok).toBe(false);
 
@@ -123,8 +123,8 @@ test.describe('Socket flows', () => {
     const { game, team, challenge, hdr } = await setupGame({ challengeType: 'wager' });
     const s = await connectAsPlayer(game.id, team.id, 'dev-4');
 
-    const accept: any = await emitAck(s, 'challenge:accept', { challengeId: challenge.id, teamId: team.id });
-    expect(accept.ok).toBe(true);
+    const start: any = await emitAck(s, 'challenge:start', { challengeId: challenge.id, teamId: team.id });
+    expect(start.ok).toBe(true);
 
     const wager: any = await emitAck(s, 'challenge:wager', { challengeId: challenge.id, teamId: team.id, wagerAmount: 10 });
     expect(wager.ok).toBe(true);
@@ -148,7 +148,7 @@ test.describe('Socket flows', () => {
     const { game, team, challenge, hdr } = await setupGame({ challengeType: 'wager' });
     const s = await connectAsPlayer(game.id, team.id, 'dev-5');
 
-    await emitAck(s, 'challenge:accept', { challengeId: challenge.id, teamId: team.id });
+    await emitAck(s, 'challenge:start', { challengeId: challenge.id, teamId: team.id });
     await emitAck(s, 'challenge:wager', { challengeId: challenge.id, teamId: team.id, wagerAmount: 15 });
 
     const fail: any = await emitAck(s, 'challenge:fail', { challengeId: challenge.id, teamId: team.id });
@@ -168,17 +168,17 @@ test.describe('Socket flows', () => {
     await teardown(game.id, hdr);
   });
 
-  test('team_busy: accepting a second challenge returns team_busy', async () => {
+  test('team_busy: starting a second challenge returns team_busy', async () => {
     const { game, team, challenge, hdr } = await setupGame({ challengeType: 'normal' });
 
     // Create a second challenge + restart the game? Can't — challenges are lobby-only.
-    // Instead: same challenge, two accept emits.
+    // Instead: same challenge, two start emits.
     const s = await connectAsPlayer(game.id, team.id, 'dev-6');
 
-    const first: any = await emitAck(s, 'challenge:accept', { challengeId: challenge.id, teamId: team.id });
+    const first: any = await emitAck(s, 'challenge:start', { challengeId: challenge.id, teamId: team.id });
     expect(first.ok).toBe(true);
 
-    const second: any = await emitAck(s, 'challenge:accept', { challengeId: challenge.id, teamId: team.id });
+    const second: any = await emitAck(s, 'challenge:start', { challengeId: challenge.id, teamId: team.id });
     expect(second.ok).toBe(false);
     expect(second.reason).toBe('team_busy');
 
@@ -201,8 +201,8 @@ test.describe('Socket flows', () => {
     const sA = await connectAsPlayer(game.id, teamA.id, 'dev-a');
     const sB = await connectAsPlayer(game.id, teamB.id, 'dev-b');
 
-    await emitAck(sA, 'challenge:accept', { challengeId: challenge.id, teamId: teamA.id });
-    await emitAck(sB, 'challenge:accept', { challengeId: challenge.id, teamId: teamB.id });
+    await emitAck(sA, 'challenge:start', { challengeId: challenge.id, teamId: teamA.id });
+    await emitAck(sB, 'challenge:start', { challengeId: challenge.id, teamId: teamB.id });
 
     // Fire both completes roughly simultaneously
     const [ackA, ackB] = await Promise.all([

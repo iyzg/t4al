@@ -7,7 +7,7 @@ import { useGameStore, getOrCreateDeviceId } from '../store';
 import { socket } from '../socket';
 import {
   registerSocketHandlers,
-  emitAccept,
+  emitStart,
   emitWager,
   emitComplete,
   emitFail,
@@ -57,7 +57,7 @@ export default function GamePage() {
   const gameId            = useGameStore((s) => s.gameId);
   const game              = useGameStore((s) => s.game);
   const teamSnapshots     = useGameStore((s) => s.teamSnapshots);
-  const acceptedLocally   = useGameStore((s) => s.acceptedLocally);
+  const startedLocally   = useGameStore((s) => s.startedLocally);
 
   const [selectedChallengeId, setSelectedChallengeId] = useState<string | null>(null);
   const [myPos, setMyPos] = useState<{ lat: number; lng: number } | null>(null);
@@ -268,9 +268,9 @@ export default function GamePage() {
   }, [myPos, challenges, selectedChallengeId]);
 
   // ── Action handlers ──
-  const handleAccept = useCallback(() => {
+  const handleStart = useCallback(() => {
     if (!selectedChallenge || !teamId) return;
-    emitAccept(selectedChallenge.id, teamId);
+    emitStart(selectedChallenge.id, teamId);
   }, [selectedChallenge, teamId]);
 
   const handleAbandon = useCallback(() => {
@@ -289,12 +289,12 @@ export default function GamePage() {
     emitWager(activeChallengeId, teamId, amount);
   }, [activeChallengeId, teamId]);
 
-  // Atomic accept + set-wager from the wager-setup sub-view. Used before the
+  // Atomic start + set-wager from the wager-setup sub-view. Used before the
   // challenge is this team's active one, so activeChallengeId isn't set yet —
-  // we emit accept and wager with the selectedChallenge.id directly.
-  const handleAcceptAndWager = useCallback((amount: number) => {
+  // we emit start and wager with the selectedChallenge.id directly.
+  const handleStartAndWager = useCallback((amount: number) => {
     if (!selectedChallenge || !teamId) return;
-    emitAccept(selectedChallenge.id, teamId);
+    emitStart(selectedChallenge.id, teamId);
     emitWager(selectedChallenge.id, teamId, amount);
   }, [selectedChallenge, teamId]);
 
@@ -315,9 +315,9 @@ export default function GamePage() {
     : false;
   const isMyActive = displayedChallenge?.id === activeChallengeId;
 
-  // Description visibility: revealed when in range OR we've accepted this challenge.
+  // Description visibility: revealed when in range OR we've started this challenge.
   const descriptionVisible = displayedChallenge != null &&
-    (inRange || isMyActive || acceptedLocally.has(displayedChallenge.id));
+    (inRange || isMyActive || startedLocally.has(displayedChallenge.id));
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100vh' }}>
@@ -356,11 +356,11 @@ export default function GamePage() {
           expireMinutes={game?.challengeExpireMinutes ?? 10}
           isClosing={isClosing}
           onClose={() => setSelectedChallengeId(null)}
-          onAccept={handleAccept}
+          onStart={handleStart}
           onAbandon={handleAbandon}
           onComplete={handleComplete}
           onSetWager={handleSetWager}
-          onAcceptAndWager={handleAcceptAndWager}
+          onStartAndWager={handleStartAndWager}
           onFailWager={handleFailWager}
         />
       )}
@@ -390,11 +390,11 @@ interface ChallengeCardProps {
   expireMinutes: number;
   isClosing: boolean;
   onClose: () => void;
-  onAccept: () => void;
+  onStart: () => void;
   onAbandon: () => void;
   onComplete: (count?: number) => void;
   onSetWager: (amount: number) => void;
-  onAcceptAndWager: (amount: number) => void;
+  onStartAndWager: (amount: number) => void;
   onFailWager: () => void;
 }
 
@@ -427,7 +427,7 @@ function ChallengeCard(props: ChallengeCardProps) {
   const {
     challenge: c, descriptionVisible, distance, inRange, isMyActive,
     activeChallengeId, wagerAmount, tokens, expireMinutes, isClosing,
-    onClose, onAccept, onAbandon, onComplete, onSetWager, onAcceptAndWager, onFailWager,
+    onClose, onStart, onAbandon, onComplete, onSetWager, onStartAndWager, onFailWager,
   } = props;
 
   const now = useNowTick(1000);
@@ -439,7 +439,7 @@ function ChallengeCard(props: ChallengeCardProps) {
 
   // Sub-views that temporarily replace the card body.
   //   score-entry: variable challenge Claim — count picker before submit
-  //   wager-setup: wager challenge — pick amount before accept+wager fires
+  //   wager-setup: wager challenge — pick amount before start+wager fires
   const [subView, setSubView] = useState<null | 'score-entry' | 'wager-setup'>(null);
 
   // Reset on challenge switch.
@@ -473,14 +473,14 @@ function ChallengeCard(props: ChallengeCardProps) {
     body = (
       <WagerSetupBody
         tokens={tokens}
-        alreadyAccepted={isMyActive}
+        alreadyStarted={isMyActive}
         onBack={() => {
           if (isMyActive) onAbandon();
           setSubView(null);
         }}
         onConfirm={(amount) => {
           if (isMyActive) onSetWager(amount);
-          else onAcceptAndWager(amount);
+          else onStartAndWager(amount);
         }}
       />
     );
@@ -495,7 +495,7 @@ function ChallengeCard(props: ChallengeCardProps) {
         pts={pts}
         countdownText={countdownText}
         distanceText={distanceText}
-        onAccept={onAccept}
+        onStart={onStart}
         onAbandon={onAbandon}
         onComplete={onComplete}
         onFailWager={onFailWager}
@@ -519,7 +519,7 @@ function ChallengeCard(props: ChallengeCardProps) {
 function MainBody({
   challenge: c, descriptionVisible, inRange, isMyActive, activeChallengeId,
   pts, countdownText, distanceText,
-  onAccept, onAbandon, onComplete, onFailWager, onEnterScoreEntry, onOpenWagerSetup,
+  onStart, onAbandon, onComplete, onFailWager, onEnterScoreEntry, onOpenWagerSetup,
 }: {
   challenge: Challenge;
   descriptionVisible: boolean;
@@ -529,7 +529,7 @@ function MainBody({
   pts: string;
   countdownText: string;
   distanceText: string;
-  onAccept: () => void;
+  onStart: () => void;
   onAbandon: () => void;
   onComplete: (count?: number) => void;
   onFailWager: () => void;
@@ -576,7 +576,7 @@ function MainBody({
             : <ActivationButton
                 type={c.type}
                 disabled={!inRange}
-                onClick={c.type === 'wager' ? onOpenWagerSetup : onAccept}
+                onClick={c.type === 'wager' ? onOpenWagerSetup : onStart}
               />
         }
       </div>
@@ -893,10 +893,10 @@ function Stepper({
 // Body for the wager setup. Rendered inside ChallengeCard so the shell and
 // animation are shared with other body variants.
 function WagerSetupBody({
-  tokens, alreadyAccepted, onBack, onConfirm,
+  tokens, alreadyStarted, onBack, onConfirm,
 }: {
   tokens: number;
-  alreadyAccepted: boolean;
+  alreadyStarted: boolean;
   onBack: () => void;
   onConfirm: (amount: number) => void;
 }) {
@@ -936,7 +936,7 @@ function WagerSetupBody({
         <OrangeButton onClick={() => onConfirm(amount)}>Confirm</OrangeButton>
       </ButtonPair>
 
-      {alreadyAccepted && (
+      {alreadyStarted && (
         <div style={{ fontSize: 12, color: STAT_TEXT, textAlign: 'center', marginTop: 10 }}>
           Back will abandon (no amount set yet).
         </div>

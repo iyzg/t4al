@@ -26,7 +26,7 @@ function formatEvent(type: string, payload: any): string {
     case 'team:created':        return `Team created: ${payload.name ?? ''}`;
     case 'team:reassigned':     return `Device reassigned to team ${payload.toTeamId ?? ''}`;
     case 'challenge:spawned':   return `"${payload.name ?? '?'}" spawned (${payload.type ?? ''})`;
-    case 'challenge:accepted':  return `Team accepted a challenge`;
+    case 'challenge:started':   return `Team started a challenge`;
     case 'challenge:abandoned': return `Team abandoned a challenge`;
     case 'challenge:expired':   return `Challenge expired`;
     case 'challenge:claimed':

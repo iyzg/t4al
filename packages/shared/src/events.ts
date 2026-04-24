@@ -81,7 +81,7 @@ export interface ChallengeExpiredPayload {
   challengeId: string;
 }
 
-export interface ChallengeAcceptedPayload {
+export interface ChallengeStartedPayload {
   challengeId: string;
   teamId: string;
 }
@@ -136,7 +136,7 @@ export interface ClientToServerEvents {
   'admin:join':         (data: AdminJoinPayload) => void;
   'location:update':    (data: LocationUpdatePayload) => void;
 
-  'challenge:accept':   (data: ChallengeActionPayload,   ack: (r: ActionAck) => void) => void;
+  'challenge:start':    (data: ChallengeActionPayload,   ack: (r: ActionAck) => void) => void;
   'challenge:wager':    (data: ChallengeWagerPayload,    ack: (r: ActionAck) => void) => void;
   'challenge:complete': (data: ChallengeCompletePayload, ack: (r: ActionAck) => void) => void;
   'challenge:fail':     (data: ChallengeActionPayload,   ack: (r: ActionAck) => void) => void;
@@ -152,7 +152,7 @@ export interface ServerToClientEvents {
   'challenge:spawned':     (data: ChallengeSpawnedPayload) => void;
   'challenge:claimed':     (data: ChallengeClaimedPayload) => void;
   'challenge:expired':     (data: ChallengeExpiredPayload) => void;
-  'challenge:accepted':    (data: ChallengeAcceptedPayload) => void;
+  'challenge:started':     (data: ChallengeStartedPayload) => void;
   'challenge:abandoned':   (data: ChallengeAbandonedPayload) => void;
   'challenge:wagerFailed': (data: ChallengeWagerFailedPayload) => void;
   'leaderboard:update':    (data: LeaderboardUpdatePayload) => void;

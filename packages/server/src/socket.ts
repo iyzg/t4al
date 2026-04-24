@@ -117,9 +117,9 @@ export function registerSocketHandlers(io: Server) {
       });
     });
 
-    // ── challenge:accept ───────────────────────────────────────────────
+    // ── challenge:start ────────────────────────────────────────────────
     socket.on(
-      'challenge:accept',
+      'challenge:start',
       async (data: ChallengeActionPayload, ack: (r: ActionAck) => void) => {
         const gameId = socket.data.gameId;
         if (!gameId || !data?.challengeId || !data?.teamId) {
@@ -130,7 +130,7 @@ export function registerSocketHandlers(io: Server) {
           return ack({ ok: false, reason: 'not_authorized' });
         }
 
-        const team = await repo.acceptChallenge(data.teamId, data.challengeId);
+        const team = await repo.startChallenge(data.teamId, data.challengeId);
         if (!team) {
           // Either team was busy or challenge was unavailable. Cheap way to
           // disambiguate: read team's current state.
@@ -141,11 +141,11 @@ export function registerSocketHandlers(io: Server) {
           return ack({ ok: false, reason: 'challenge_unavailable' });
         }
 
-        io.to(gameRoom(gameId)).emit('challenge:accepted', {
+        io.to(gameRoom(gameId)).emit('challenge:started', {
           challengeId: data.challengeId,
           teamId:      data.teamId,
         });
-        repo.logEvent(gameId, 'challenge:accepted', {
+        repo.logEvent(gameId, 'challenge:started', {
           challengeId: data.challengeId,
           teamId:      data.teamId,
         });

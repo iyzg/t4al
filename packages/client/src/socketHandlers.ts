@@ -43,9 +43,9 @@ export function registerSocketHandlers() {
     store().challengeExpired(data.challengeId);
   });
 
-  socket.on('challenge:accepted', (data) => {
+  socket.on('challenge:started', (data) => {
     if (!data?.challengeId || !data?.teamId) return;
-    store().challengeAcceptedBy(data.challengeId, data.teamId);
+    store().challengeStartedBy(data.challengeId, data.teamId);
   });
 
   socket.on('challenge:abandoned', (data) => {
@@ -76,13 +76,13 @@ export function registerSocketHandlers() {
       ? 'Challenge expired.'
       : 'Another team claimed this challenge first.';
     store().showToast(reason, 'info');
-    store().clearAcceptedLocally(data.challengeId);
+    store().clearStartedLocally(data.challengeId);
   });
 
   socket.on('complete:success', (data) => {
     if (!data) return;
     store().showToast(`You earned ${data.tokensAwarded} tokens!`, 'info');
-    store().clearAcceptedLocally(data.challengeId);
+    store().clearStartedLocally(data.challengeId);
   });
 
   socket.on('wager:result', (data) => {
@@ -122,10 +122,10 @@ function handleAck(ack: ActionAck) {
   }
 }
 
-export function emitAccept(challengeId: string, teamId: string) {
-  socket.emit('challenge:accept', { challengeId, teamId }, (ack) => {
+export function emitStart(challengeId: string, teamId: string) {
+  socket.emit('challenge:start', { challengeId, teamId }, (ack) => {
     handleAck(ack);
-    if (ack.ok) useGameStore.getState().markAcceptedLocally(challengeId);
+    if (ack.ok) useGameStore.getState().markStartedLocally(challengeId);
   });
 }
 

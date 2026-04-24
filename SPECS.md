@@ -5,7 +5,7 @@
 
 ## 1. Overview
 
-**Concept**: Teams compete across Chicago's Loop in a live, map-based challenge game. An admin pre-configures all challenges before the game — placing pins on a map, writing names and descriptions, and setting display order. Challenges appear in a queue: K challenges are active at a time, and when one is completed or expires, the next in order takes its slot. Teams travel to challenge locations, enter proximity range, and accept challenges. Three challenge types create varied gameplay: **normal** (fixed tokens), **variable** (tokens per unit), and **wager** (risk your tokens for double reward).
+**Concept**: Teams compete across Chicago's Loop in a live, map-based challenge game. An admin pre-configures all challenges before the game — placing pins on a map, writing names and descriptions, and setting display order. Challenges appear in a queue: K challenges are active at a time, and when one is completed or expires, the next in order takes its slot. Teams travel to challenge locations, enter proximity range, and start challenges. Three challenge types create varied gameplay: **normal** (fixed tokens), **variable** (tokens per unit), and **wager** (risk your tokens for double reward).
 
 **Core Rules**
 - 5–7 teams, multiple devices per team
@@ -16,7 +16,7 @@
 - First team to complete a challenge claims it
 - Honor system throughout
 - Leaderboard always visible to all teams
-- Team GPS never shown to other teams — only challenge acceptance is broadcast
+- Team GPS never shown to other teams — only challenge start is broadcast
 
 ---
 
@@ -49,7 +49,7 @@ interface Team {
   color: string;                       // unique within gameId (from fixed palette)
   tokens: number;                      // current token balance — initialized to game.startingTokens
   activeChallengeId: string | null;    // the one challenge this team is working on
-  wagerAmount: number | null;          // set when team accepts a wager challenge (private to team)
+  wagerAmount: number | null;          // set when team starts a wager challenge (private to team)
   joinedAt: Date;
 }
 ```
@@ -118,7 +118,7 @@ type GameEventType =
   | 'team:created'
   | 'team:reassigned'      // { deviceId, fromTeamId, toTeamId }
   | 'challenge:spawned'
-  | 'challenge:accepted'
+  | 'challenge:started'
   | 'challenge:abandoned'
   | 'challenge:claimed'    // { challengeId, teamId, teamName, tokensAwarded, wagerAmount? }
   | 'challenge:expired'
@@ -239,7 +239,7 @@ Enter join code
 - **Challenge pin appears on map**
   - **Out of range** — see: name, type badge, tokens/rate, distance, expiration countdown. Description HIDDEN.
   - **In range** — description revealed + **Accept** button
-    - Team must have no active challenge to accept
+    - Team must have no active challenge to start
     - **Accept** → `team.activeChallengeId` is set → branches by challenge type:
       - **Normal**
         - **Claim** → tokens awarded → challenge claimed → done
@@ -261,8 +261,8 @@ Descriptions are included in `game:state` and `challenge:spawned` payloads for a
 
 | State | Description |
 |---|---|
-| Not accepted + out of range | HIDDEN |
-| Not accepted + in range | REVEALED |
+| Not started + out of range | HIDDEN |
+| Not started + in range | REVEALED |
 | Accepted (any proximity) | REVEALED — stays visible while performing the challenge |
 | Abandoned | reverts to proximity-based rule above |
 
@@ -286,7 +286,7 @@ Three room types, each client joins the appropriate rooms on connect:
 ```
 game:{gameId}     All clients in this game (all teams + admin)
                   Receives: challenge spawned/claimed/expired, leaderboard updates,
-                            challenge accepted/abandoned, game start/end
+                            challenge started/abandoned, game start/end
 
 team:{teamId}     All devices on this team
                   Receives: challenge yanked, complete result, wager result,
@@ -360,7 +360,7 @@ SET status = 'claimed', claimed_by_team_id = $1, claimed_at = NOW()
 WHERE id = $2 AND status = 'active'
 RETURNING *;
 
--- Set wager amount (wager type, still accepted but no amount set)
+-- Set wager amount (wager type, still started but no amount set)
 UPDATE teams
 SET wager_amount = $1
 WHERE id = $2 AND active_challenge_id = $3 AND wager_amount IS NULL
@@ -544,7 +544,7 @@ ALTER TABLE challenges ADD CONSTRAINT challenge_type_fields CHECK (
 ALTER TABLE teams ADD CONSTRAINT team_name_unique_per_game  UNIQUE (game_id, name);
 ALTER TABLE teams ADD CONSTRAINT team_color_unique_per_game UNIQUE (game_id, color);
 
--- Wager is only set on wager-type challenges, only while accepted
+-- Wager is only set on wager-type challenges, only while started
 -- (enforced in application code; DB can't cross-check easily)
 ```
 
@@ -575,7 +575,7 @@ If the server process restarts mid-game, in-memory state (timers, device pings) 
 'game:join'              { gameId, teamId, deviceId }                   // player clients
 'admin:join'             { gameId, adminCode }                          // admin clients
 'location:update'        { deviceId, teamId, lat, lng }
-'challenge:accept'       { challengeId, teamId }                        // any type; no wager yet
+'challenge:start'       { challengeId, teamId }                        // any type; no wager yet
 'challenge:wager'        { challengeId, teamId, wagerAmount }           // wager type only: locks in amount
 'challenge:complete'     { challengeId, teamId, count?: number }        // count for variable (≥1); no count for normal/wager
 'challenge:fail'         { challengeId, teamId }                        // wager only: self-report failure
@@ -590,12 +590,12 @@ type ActionAck =
   | { ok: false, reason: 'team_busy' | 'challenge_unavailable' | 'invalid_state' | 'bad_input' };
 
 // Client
-socket.emit('challenge:accept', payload, (ack: ActionAck) => {
+socket.emit('challenge:start', payload, (ack: ActionAck) => {
   if (!ack.ok) showToast(toastCopy[ack.reason]);
 });
 
 // Server
-socket.on('challenge:accept', async (payload, ack) => {
+socket.on('challenge:start', async (payload, ack) => {
   const row = await db.query(ATOMIC_ACCEPT_SQL, [...]);
   if (row.rowCount === 0) return ack({ ok: false, reason: 'team_busy_or_challenge_unavailable' });
   // ... broadcast, etc.
@@ -604,7 +604,7 @@ socket.on('challenge:accept', async (payload, ack) => {
 ```
 
 Ack reasons by event:
-- `challenge:accept` → `team_busy` (team already has an active challenge) / `challenge_unavailable` (claimed or expired before your tap landed)
+- `challenge:start` → `team_busy` (team already has an active challenge) / `challenge_unavailable` (claimed or expired before your tap landed)
 - `challenge:wager` → `invalid_state` (team isn't on this challenge) / `bad_input` (wagerAmount out of range)
 - `challenge:complete` → `challenge_unavailable` (race lost) / `invalid_state` (not your team's active) / `bad_input` (count < 1 for variable)
 - `challenge:fail` / `challenge:abandon` → `invalid_state` (not your team's active, or abandon-after-wager)
@@ -619,7 +619,7 @@ Ack reasons by event:
 'challenge:spawned'      { challenge: Challenge }             // new challenge activated from queue (includes description — client gates visibility)
 'challenge:claimed'      { challengeId, teamId, teamName, tokensAwarded }
 'challenge:expired'      { challengeId }
-'challenge:accepted'     { challengeId, teamId }              // a team started working on a challenge
+'challenge:started'     { challengeId, teamId }              // a team started working on a challenge
 'challenge:abandoned'    { challengeId, teamId }
 'challenge:wagerFailed'  { challengeId, teamId }              // a team failed their wager (challenge stays active)
 'leaderboard:update'     { teams: { id, name, color, tokens, rank }[] }
@@ -644,7 +644,7 @@ Ack reasons by event:
 
 | Event | Admin client action |
 |---|---|
-| `challenge:accepted { challengeId, teamId }` | `teams[teamId].activeChallengeId = challengeId` |
+| `challenge:started { challengeId, teamId }` | `teams[teamId].activeChallengeId = challengeId` |
 | `challenge:abandoned { challengeId, teamId }` | `teams[teamId].activeChallengeId = null` |
 | `challenge:claimed { challengeId, teamId, … }` | clear `activeChallengeId` on that team + any other team that had it set to this challenge; apply tokens delta |
 | `challenge:expired { challengeId }` | clear `activeChallengeId` on any team that had it set to this challenge |
@@ -820,7 +820,7 @@ Either works.
 | Devices per team | Multiple — anonymous, same join flow |
 | Team location (admin view) | Average of latest ping from each device active in last 30s, broadcast to admin room every 5s |
 | Team location (player view) | Each device renders its own GPS via `navigator.geolocation` — no server round-trip. Proximity checks are per-device, client-side. |
-| Team location visibility | Player GPS never broadcast to other teams. Only `challenge:accepted` is broadcast. Admin sees averaged team positions via admin room. |
+| Team location visibility | Player GPS never broadcast to other teams. Only `challenge:started` is broadcast. Admin sees averaged team positions via admin room. |
 | Device identity | Random UUID in localStorage (`deviceId`) |
 | Challenge types | Normal (fixed tokens), variable (tokens/unit), wager (bet your tokens) |
 | Challenge visibility | Name, type, tokens/rate, distance, expiration always visible. Description: see §3.3 "Description Visibility" table. |

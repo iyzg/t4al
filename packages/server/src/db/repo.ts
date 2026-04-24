@@ -61,10 +61,10 @@ export async function listActiveGames(): Promise<Game[]> {
 // ── Atomic state transitions ──
 
 /**
- * Team accepts a challenge: team has no active challenge AND challenge is still active.
+ * Team starts a challenge: team has no active challenge AND challenge is still active.
  * Returns the team row on success, null if either precondition fails.
  */
-export async function acceptChallenge(
+export async function startChallenge(
   teamId: string,
   challengeId: string,
 ): Promise<Team | null> {
@@ -81,7 +81,7 @@ export async function acceptChallenge(
 }
 
 /**
- * Team sets a wager amount on their already-accepted wager challenge.
+ * Team sets a wager amount on their already-started wager challenge.
  * Precondition: team.activeChallengeId = challengeId AND team.wagerAmount IS NULL
  *               AND amount >= 1 AND amount <= team.tokens.
  */
