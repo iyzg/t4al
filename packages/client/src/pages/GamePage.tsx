@@ -64,6 +64,27 @@ export default function GamePage() {
 
   const selectedChallenge = selectedChallengeId ? challenges[selectedChallengeId] ?? null : null;
 
+  // The sheet can outlive selectedChallenge briefly while it slides down. Track
+  // a "displayed" challenge that lags behind selection by one animation cycle.
+  const SHEET_EXIT_MS = 240;
+  const [displayedChallenge, setDisplayedChallenge] = useState<typeof selectedChallenge>(null);
+  const [isClosing, setIsClosing] = useState(false);
+  useEffect(() => {
+    if (selectedChallenge) {
+      setDisplayedChallenge(selectedChallenge);
+      setIsClosing(false);
+      return;
+    }
+    if (displayedChallenge) {
+      setIsClosing(true);
+      const id = setTimeout(() => {
+        setDisplayedChallenge(null);
+        setIsClosing(false);
+      }, SHEET_EXIT_MS);
+      return () => clearTimeout(id);
+    }
+  }, [selectedChallenge, displayedChallenge]);
+
   useEffect(() => { registerSocketHandlers(); }, []);
 
   // Restore identity from sessionStorage on refresh, else redirect to /join
@@ -282,17 +303,21 @@ export default function GamePage() {
     emitFail(activeChallengeId, teamId);
   }, [activeChallengeId, teamId]);
 
-  const distance = selectedChallenge && myPos
-    ? distanceMeters(myPos.lat, myPos.lng, selectedChallenge.lat, selectedChallenge.lng)
+  // Drive the card's displayed state from `displayedChallenge` (which lags
+  // selectedChallenge through the close animation) rather than selectedChallenge
+  // directly — otherwise everything would go null/false the moment the user
+  // hits X, ripping content out before the slide-down finishes.
+  const distance = displayedChallenge && myPos
+    ? distanceMeters(myPos.lat, myPos.lng, displayedChallenge.lat, displayedChallenge.lng)
     : null;
-  const inRange = selectedChallenge && distance != null
-    ? distance <= selectedChallenge.proximityMeters
+  const inRange = displayedChallenge && distance != null
+    ? distance <= displayedChallenge.proximityMeters
     : false;
-  const isMyActive = selectedChallenge?.id === activeChallengeId;
+  const isMyActive = displayedChallenge?.id === activeChallengeId;
 
   // Description visibility: revealed when in range OR we've accepted this challenge.
-  const descriptionVisible = selectedChallenge != null &&
-    (inRange || isMyActive || acceptedLocally.has(selectedChallenge.id));
+  const descriptionVisible = displayedChallenge != null &&
+    (inRange || isMyActive || acceptedLocally.has(displayedChallenge.id));
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100vh' }}>
@@ -317,9 +342,10 @@ export default function GamePage() {
 
       {gameStatus === 'lobby' && <LobbyBanner />}
 
-      {selectedChallenge && (
+      {displayedChallenge && (
         <ChallengeCard
-          challenge={selectedChallenge}
+          key={displayedChallenge.id}
+          challenge={displayedChallenge}
           descriptionVisible={descriptionVisible}
           distance={distance}
           inRange={inRange}
@@ -328,6 +354,7 @@ export default function GamePage() {
           wagerAmount={wagerAmount}
           tokens={tokens}
           expireMinutes={game?.challengeExpireMinutes ?? 10}
+          isClosing={isClosing}
           onClose={() => setSelectedChallengeId(null)}
           onAccept={handleAccept}
           onAbandon={handleAbandon}
@@ -361,6 +388,7 @@ interface ChallengeCardProps {
   wagerAmount: number | null;
   tokens: number;
   expireMinutes: number;
+  isClosing: boolean;
   onClose: () => void;
   onAccept: () => void;
   onAbandon: () => void;
@@ -398,7 +426,7 @@ function useNowTick(intervalMs = 1000): number {
 function ChallengeCard(props: ChallengeCardProps) {
   const {
     challenge: c, descriptionVisible, distance, inRange, isMyActive,
-    activeChallengeId, wagerAmount, tokens, expireMinutes,
+    activeChallengeId, wagerAmount, tokens, expireMinutes, isClosing,
     onClose, onAccept, onAbandon, onComplete, onSetWager, onAcceptAndWager, onFailWager,
   } = props;
 
@@ -478,7 +506,10 @@ function ChallengeCard(props: ChallengeCardProps) {
   }
 
   return (
-    <div className="challenge-card" style={cardShellStyle()}>
+    <div
+      className={isClosing ? 'challenge-card sheet-closing' : 'challenge-card'}
+      style={cardShellStyle()}
+    >
       <CardHeader title={c.name} onClose={onClose} />
       {body}
     </div>

@@ -55,16 +55,24 @@ button {
 }
 
 
-/* Challenge card: slide up from the bottom when first opened. The card is
-   rendered inside ChallengeCard with a stable outer <div>, so switching
-   between the main view and a sub-view (score-entry / wager-setup) does
-   NOT re-trigger this animation — the shell stays mounted. */
+/* Challenge card: slide up from the bottom on open, slide down on close.
+   The shell stays mounted while switching between body variants (main,
+   score-entry, wager-setup), so those swaps don't re-trigger animation.
+   GamePage keeps the card rendered with isClosing=true for SHEET_EXIT_MS
+   so the slide-down finishes before unmount. */
 @keyframes sheet-slide-up {
   from { transform: translateY(100%); }
   to   { transform: translateY(0); }
 }
+@keyframes sheet-slide-down {
+  from { transform: translateY(0); }
+  to   { transform: translateY(100%); }
+}
 .challenge-card {
   animation: sheet-slide-up 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.challenge-card.sheet-closing {
+  animation: sheet-slide-down 240ms cubic-bezier(0.4, 0, 0.8, 0.3) both;
 }
 
 /* Click-feedback pop for challenge pins. The chip is an SVG <g> whose
