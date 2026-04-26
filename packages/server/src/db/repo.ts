@@ -134,6 +134,15 @@ export async function expireChallengeRow(challengeId: string): Promise<Challenge
   return r.rows[0] ? mapChallenge(r.rows[0]) : null;
 }
 
+export async function expireActiveChallengesForGame(gameId: string): Promise<Challenge[]> {
+  const r = await pool.query(
+    `UPDATE challenges SET status = 'expired'
+     WHERE game_id = $1 AND status = 'active' RETURNING *`,
+    [gameId],
+  );
+  return r.rows.map(mapChallenge);
+}
+
 /**
  * Atomic game start: only flips a lobby game, computes endTime from duration.
  */

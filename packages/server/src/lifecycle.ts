@@ -315,6 +315,14 @@ export async function endGameAndBroadcast(
   const ended = await repo.endGame(gameId);
   if (!ended) return { ok: false, reason: 'invalid_state' };
 
+  // Flip any still-active challenges to expired so the post-game state is clean
+  // and the event log reflects what happened to them.
+  const expired = await repo.expireActiveChallengesForGame(gameId);
+  for (const ch of expired) {
+    io.to(`game:${gameId}`).emit('challenge:expired', { challengeId: ch.id });
+    repo.logEvent(gameId, 'challenge:expired', { challengeId: ch.id });
+  }
+
   const teamsResult = await pool.query(
     'SELECT id, name, color, tokens FROM teams WHERE game_id = $1 ORDER BY tokens DESC, name ASC',
     [gameId],
