@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *.pmtiles
+!packages/client/public/loop.pmtiles
 .env
 anki/
 test-results/

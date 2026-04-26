@@ -1,19 +1,16 @@
 import type maplibregl from 'maplibre-gl';
 
-export const CHICAGO_CENTER: [number, number] = [-87.6298, 41.8827];
+export const CHICAGO_CENTER: [number, number] = [-87.624078, 41.872402];
 export const DEFAULT_ZOOM = 15;
 
-// Pan + zoom limits matched to the chicago.pmtiles extract.
-// The file covers Near West Side → Lincoln Park (lng -87.85 → -87.50,
-// lat 41.76 → 42.00) at zooms 10–15. Re-extracted from the Protomaps
-// daily build on 2026-04-21 via:
-//   pmtiles extract https://build.protomaps.com/YYYYMMDD.pmtiles chicago.pmtiles \
-//       --bbox=-87.85,41.76,-87.50,42.00 --minzoom=10 --maxzoom=17
-// (maxzoom caps at 15 since that's what Protomaps' daily basemap builds to;
-// for sharper tiles you'd need to run planetiler yourself.)
+// Pan + zoom limits matched to the loop.pmtiles extract — the actual play area.
+// Re-extracted from the Protomaps daily build on 2026-04-26 via:
+//   pmtiles extract https://build.protomaps.com/YYYYMMDD.pmtiles loop.pmtiles \
+//       --bbox=-87.644205,41.852685,-87.603951,41.892119 --minzoom=10 --maxzoom=15
+// 2.1 MB output (down from 35 MB for the wider Chicago extract).
 export const CHICAGO_BOUNDS: [[number, number], [number, number]] = [
-  [-87.85, 41.76],  // SW — matches the extract
-  [-87.50, 42.00],  // NE
+  [-87.644205, 41.852685],  // SW — matches the extract
+  [-87.603951, 41.892119],  // NE
 ];
 // minZoom 14: below this, the water polygon in the PMTiles file is simplified
 // so aggressively that Lake Michigan's west shoreline cuts diagonally over
@@ -38,7 +35,7 @@ export function getMapStyle(): maplibregl.StyleSpecification {
     sources: {
       [src]: {
         type: 'vector',
-        url: 'pmtiles:///chicago.pmtiles',
+        url: 'pmtiles:///loop.pmtiles',
       },
     },
     layers: [

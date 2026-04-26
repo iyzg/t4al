@@ -1,0 +1,18 @@
+[Unit]
+Description=t4al game server
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/src/t4al/packages/server
+EnvironmentFile=/root/src/t4al/.env
+ExecStart=/usr/bin/npx tsx src/index.ts
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
