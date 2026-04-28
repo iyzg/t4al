@@ -1116,7 +1116,31 @@ function createPinElement(
   renderChipSvg(chip, c, activeChallengeId);
 
   outer.appendChild(svg);
+
+  // Token pill below the chip — shows the value (or "???" for variable/wager).
+  const pill = document.createElement('div');
+  pill.className = 'pin-token-pill';
+  pill.style.cssText =
+    `position:absolute;top:100%;left:50%;transform:translate(-50%,4px);` +
+    `display:flex;align-items:center;gap:3px;` +
+    `background:${CHALLENGE_COLOR};color:white;` +
+    `border:2px solid white;border-radius:999px;` +
+    `padding:2px 8px 2px 6px;` +
+    `font:600 12px/1 -apple-system,BlinkMacSystemFont,sans-serif;` +
+    `white-space:nowrap;pointer-events:none;` +
+    `box-shadow:0 1px 3px rgba(0,0,0,0.25);`;
+  pill.innerHTML = pillContent(c);
+  outer.appendChild(pill);
+
   return outer;
+}
+
+function pillContent(c: Challenge): string {
+  const STAR =
+    `<svg width="10" height="10" viewBox="0 0 24 24" style="display:block">` +
+    `<path d="M12 1L9 9L1 12L9 15L12 23L15 15L23 12L15 9L12 1Z" fill="white" /></svg>`;
+  const value = c.type === 'normal' ? String(c.tokens ?? '?') : '???';
+  return `${STAR}<span>${value}</span>`;
 }
 
 // Update the chip only — border weight, wager notches, active state.
