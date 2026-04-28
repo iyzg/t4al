@@ -265,7 +265,7 @@ export default function AdminLivePage() {
             <span style={{ width: 12, height: 12, borderRadius: '50%', background: t.color }} />
             <span>{t.name}</span>
             {t.activeChallengeId && <span style={{ fontSize: 11, opacity: 0.5 }}>(active)</span>}
-            <span style={{ marginLeft: 'auto', fontWeight: 'bold' }}>{t.tokens} 🪙</span>
+            <span style={{ marginLeft: 'auto', fontWeight: 'bold' }}>{t.tokens} tokens</span>
           </div>
         ))}
 
