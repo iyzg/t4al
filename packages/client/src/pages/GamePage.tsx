@@ -556,6 +556,8 @@ function MainBody({
           color: CARD_TEXT,
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
+          userSelect: descriptionVisible ? 'text' : 'none',
+          WebkitUserSelect: descriptionVisible ? 'text' : 'none',
         }}
       >
         {c.description}
