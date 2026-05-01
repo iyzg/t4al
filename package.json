@@ -5,7 +5,8 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -n server,client -c blue,magenta 'npm:dev --workspace=@t4al/server' 'npm:dev --workspace=@t4al/client'"
+    "dev": "concurrently -n server,client -c blue,magenta 'npm:dev --workspace=@t4al/server' 'npm:dev --workspace=@t4al/client'",
+    "puppet": "tsx tools/puppet.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
