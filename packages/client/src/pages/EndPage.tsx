@@ -44,7 +44,7 @@ export default function EndPage() {
             <span style={{ width: 16, height: 16, borderRadius: '50%', background: team.color }} />
             <span style={{ fontWeight: 'bold', fontSize: 18 }}>{team.name}</span>
           </div>
-          <span style={{ fontSize: 20, fontWeight: 'bold' }}>{team.tokens} 🪙</span>
+          <span style={{ fontSize: 20, fontWeight: 'bold' }}>{team.tokens} tokens</span>
         </div>
       ))}
 
