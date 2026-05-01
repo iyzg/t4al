@@ -87,10 +87,10 @@ export default function GamePage() {
 
   useEffect(() => { registerSocketHandlers(); }, []);
 
-  // Restore identity from sessionStorage on refresh, else redirect to /join
+  // Restore identity from localStorage on refresh, else redirect to /join
   useEffect(() => {
     if (gameId && teamId) return;
-    const saved = sessionStorage.getItem('t4al_identity');
+    const saved = localStorage.getItem('t4al_identity');
     if (!saved) {
       navigate('/join');
       return;

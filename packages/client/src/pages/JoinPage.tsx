@@ -86,7 +86,7 @@ export default function JoinPage() {
       teamColor: team.color,
       deviceId,
     });
-    sessionStorage.setItem('t4al_identity', JSON.stringify({
+    localStorage.setItem('t4al_identity', JSON.stringify({
       gameId: game!.id, teamId: team.id, teamColor: team.color,
     }));
 
