@@ -19,20 +19,27 @@ function typeColor(t: ChallengeType): string {
   return t === 'normal' ? '#3498db' : t === 'variable' ? '#2ecc71' : '#9b59b6';
 }
 
-function formatEvent(type: string, payload: any): string {
+function formatEvent(
+  type: string,
+  payload: any,
+  ctx: { teamName: (id?: string | null) => string; challengeName: (id?: string | null) => string },
+): string {
+  const team = ctx.teamName(payload?.teamId);
+  const ch = ctx.challengeName(payload?.challengeId);
   switch (type) {
     case 'game:started':        return 'Game started';
     case 'game:ended':          return 'Game ended';
     case 'team:created':        return `Team created: ${payload.name ?? ''}`;
-    case 'team:reassigned':     return `Device reassigned to team ${payload.toTeamId ?? ''}`;
+    case 'team:reassigned':
+      return `Device reassigned: ${ctx.teamName(payload.fromTeamId)} → ${ctx.teamName(payload.toTeamId)}`;
     case 'challenge:spawned':   return `"${payload.name ?? '?'}" spawned (${payload.type ?? ''})`;
-    case 'challenge:started':   return `Team started a challenge`;
-    case 'challenge:abandoned': return `Team abandoned a challenge`;
-    case 'challenge:expired':   return `Challenge expired`;
+    case 'challenge:started':   return `${team} started ${ch}`;
+    case 'challenge:abandoned': return `${team} gave up on ${ch}`;
+    case 'challenge:expired':   return `${ch} expired`;
     case 'challenge:claimed':
-      return `${payload.teamName ?? 'Team'} claimed a challenge (+${payload.tokensAwarded ?? '?'})`;
+      return `${payload.teamName ?? team} claimed ${ch} (+${payload.tokensAwarded ?? '?'})`;
     case 'challenge:wagerFailed':
-      return `Team failed a wager (−${payload.wagerAmount ?? '?'})`;
+      return `${team} failed wager on ${ch} (−${payload.wagerAmount ?? '?'})`;
     default: return `${type}`;
   }
 }
@@ -305,7 +312,10 @@ export default function AdminLivePage() {
           {events.map((e) => (
             <div key={e.id} style={{ marginBottom: 4 }}>
               <span style={{ opacity: 0.5 }}>{new Date(e.createdAt).toLocaleTimeString()}</span>{' '}
-              {formatEvent(e.type, e.payload)}
+              {formatEvent(e.type, e.payload, {
+                teamName: (id) => teams.find((t) => t.id === id)?.name ?? 'Team',
+                challengeName: (id) => challenges.find((c) => c.id === id)?.name ?? 'a challenge',
+              })}
             </div>
           ))}
         </div>
