@@ -962,10 +962,23 @@ function rankedTeams(teams: TeamSnapshot[]): Array<{ team: TeamSnapshot; rank: n
 
 // Segmented vertical stack of all teams (including yours). Only the very
 // top and very bottom outer corners are rounded; internal edges are flat.
-// Ordered by rank — top bar is #1.
+// Ordered by rank — top bar is #1. Sliver heights scale with relative
+// tokens so token changes are visible at a glance: leader stretches,
+// laggers shrink.
 function TeamStack({ teams }: { teams: TeamSnapshot[] }) {
   const R = 4;
+  const MIN_H = 10;
+  const MAX_H = 36;
   const ranked = rankedTeams(teams);
+
+  // Scale heights against the score range. If everyone's tied, all use MIN_H.
+  const counts = ranked.map(({ team }) => team.tokens);
+  const lo = counts.length ? Math.min(...counts) : 0;
+  const hi = counts.length ? Math.max(...counts) : 0;
+  const span = hi - lo;
+  const heightFor = (tokens: number) =>
+    span === 0 ? MIN_H : MIN_H + ((tokens - lo) / span) * (MAX_H - MIN_H);
+
   return (
     <div
       style={{
@@ -981,12 +994,14 @@ function TeamStack({ teams }: { teams: TeamSnapshot[] }) {
             key={team.id}
             title={`${team.name} · #${rank} · ${team.tokens}`}
             style={{
-              width: 8, height: 22,
+              width: 8,
+              height: heightFor(team.tokens),
               background: team.color,
               borderTopLeftRadius:     isFirst ? R : 0,
               borderTopRightRadius:    isFirst ? R : 0,
               borderBottomLeftRadius:  isLast  ? R : 0,
               borderBottomRightRadius: isLast  ? R : 0,
+              transition: 'height 320ms ease',
             }}
           />
         );
