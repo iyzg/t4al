@@ -61,6 +61,8 @@ export default function GamePage() {
 
   const [selectedChallengeId, setSelectedChallengeId] = useState<string | null>(null);
   const [myPos, setMyPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [geoBlocked, setGeoBlocked] = useState(false);
+  const [geoRetryKey, setGeoRetryKey] = useState(0);
 
   const selectedChallenge = selectedChallengeId ? challenges[selectedChallengeId] ?? null : null;
 
@@ -123,8 +125,14 @@ export default function GamePage() {
         setMyPos({ lat, lng });
         myPosRef.current = { lat, lng };
         useGameStore.getState().setMyLocation({ lat, lng });
+        if (geoBlocked) setGeoBlocked(false);
       },
-      (err) => console.warn('GPS error:', err.message),
+      (err) => {
+        console.warn('GPS error:', err.message);
+        // PERMISSION_DENIED (1) is unrecoverable without user action — show overlay.
+        // POSITION_UNAVAILABLE (2) and TIMEOUT (3) are transient; let the watcher keep trying.
+        if (err.code === err.PERMISSION_DENIED) setGeoBlocked(true);
+      },
       { enableHighAccuracy: true },
     );
 
@@ -139,7 +147,7 @@ export default function GamePage() {
       navigator.geolocation.clearWatch(watchId);
       clearInterval(heartbeat);
     };
-  }, [teamId, gameId]);
+  }, [teamId, gameId, geoRetryKey]);
 
   // Initialize map
   useEffect(() => {
@@ -342,6 +350,10 @@ export default function GamePage() {
       </div>
 
       {gameStatus === 'lobby' && <LobbyBanner />}
+
+      {geoBlocked && (
+        <GeoBlockedOverlay onRetry={() => { setGeoBlocked(false); setGeoRetryKey((k) => k + 1); }} />
+      )}
 
       {displayedChallenge && (
         <ChallengeCard
@@ -1066,6 +1078,48 @@ function LobbyBanner() {
       }}
     >
       Game starting soon! :)
+    </div>
+  );
+}
+
+// Full-screen overlay shown when navigator.geolocation rejects with
+// PERMISSION_DENIED. Without it, the player sees a working-looking app
+// but proximity never fires — taps in range silently do nothing.
+function GeoBlockedOverlay({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div
+      style={{
+        position: 'absolute', inset: 0,
+        background: 'rgba(11, 15, 26, 0.94)',
+        color: 'white',
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        gap: 16, padding: 24, textAlign: 'center',
+        zIndex: 30,
+      }}
+    >
+      <div style={{ fontSize: 48 }}>📍</div>
+      <h2 style={{ margin: 0, fontSize: 22 }}>Location access required</h2>
+      <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, maxWidth: 320, opacity: 0.85 }}>
+        This game uses your location to know when you're at a challenge.
+        Allow location access for this site in your browser settings, then tap Retry.
+      </p>
+      <button
+        onClick={onRetry}
+        style={{
+          marginTop: 8,
+          padding: '12px 24px',
+          background: '#E88B3E',
+          color: 'white',
+          border: 'none',
+          borderRadius: 12,
+          fontSize: 15,
+          fontWeight: 700,
+          cursor: 'pointer',
+        }}
+      >
+        Retry
+      </button>
     </div>
   );
 }
