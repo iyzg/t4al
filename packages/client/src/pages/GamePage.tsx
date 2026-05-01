@@ -642,7 +642,7 @@ function ActiveActions(props: {
       <ButtonPair>
         <GreyButton onClick={onAbandon}>Give Up</GreyButton>
         <OrangeHoldButton onComplete={() => onComplete()} ariaLabel="Hold to claim">
-          <ClaimIcon size={16} /> Claim
+          <ClaimIcon size={16} /> Hold to claim
         </OrangeHoldButton>
       </ButtonPair>
     );
@@ -664,9 +664,9 @@ function ActiveActions(props: {
   // wager-setup sub-view at the ChallengeCard level, so it never reaches here.
   return (
     <ButtonPair>
-      <GreyHoldButton onComplete={onFailWager} ariaLabel="Hold to fail">Fail</GreyHoldButton>
+      <GreyHoldButton onComplete={onFailWager} ariaLabel="Hold to fail">Hold to fail</GreyHoldButton>
       <OrangeHoldButton onComplete={() => onComplete()} ariaLabel="Hold to claim success">
-        <ClaimIcon size={16} /> Success
+        <ClaimIcon size={16} /> Hold for success
       </OrangeHoldButton>
     </ButtonPair>
   );
@@ -856,7 +856,7 @@ function ScoreEntryBody({
       <ButtonPair>
         <GreyButton onClick={onBack}>Back</GreyButton>
         <OrangeHoldButton onComplete={() => onSubmit(count)} ariaLabel="Hold to claim">
-          <ClaimIcon size={16} /> Claim
+          <ClaimIcon size={16} /> Hold to claim
         </OrangeHoldButton>
       </ButtonPair>
     </>
