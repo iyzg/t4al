@@ -41,6 +41,10 @@ export interface GameStore {
 
   // Ephemeral UI state — toast is a queue; oldest first
   toasts:        Array<{ id: number; message: string; kind: 'error' | 'info' }>;
+  // Socket connection status: 'connected' is the happy path; 'reconnecting'
+  // means socket.io's auto-retry is firing; 'offline' means we've been
+  // disconnected long enough that the player should know.
+  connectionStatus: 'connected' | 'reconnecting' | 'offline';
   startedLocally: Set<string>;  // challengeIds we've started since last map reset
                                   // (used so description stays revealed after walking out of range)
 
@@ -68,6 +72,7 @@ export interface GameStore {
 
   showToast:             (message: string, kind?: 'error' | 'info') => void;
   dismissToast:          (id: number) => void;
+  setConnectionStatus:   (status: 'connected' | 'reconnecting' | 'offline') => void;
 }
 
 export const useGameStore = create<GameStore>()((set, get) => ({
@@ -93,6 +98,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
   myLocation: null,
 
   toasts: [],
+  connectionStatus: 'connected',
   startedLocally: new Set(),
 
   setIdentity: ({ gameId, teamId, teamColor, deviceId }) =>
@@ -233,6 +239,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
     toasts: [...s.toasts, { id: Date.now() + Math.random(), message, kind }],
   })),
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+  setConnectionStatus: (status) => set({ connectionStatus: status }),
 }));
 
 // Generate or retrieve a persistent deviceId from localStorage.

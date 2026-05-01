@@ -333,6 +333,7 @@ export default function GamePage() {
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
 
       <Toast />
+      <ConnectionBanner />
 
       {/* Top-left HUD column: clock · (rank if active) · team-stack.
           One flex column so vertical gaps stay equal regardless of whether
@@ -1078,6 +1079,32 @@ function LobbyBanner() {
       }}
     >
       Game starting soon! :)
+    </div>
+  );
+}
+
+// Slim banner pinned to the top of the screen when the socket is not
+// connected. Two states: 'reconnecting' (transient, soft yellow) and
+// 'offline' (after ~8s, sterner red). Hidden entirely when 'connected'.
+function ConnectionBanner() {
+  const status = useGameStore((s) => s.connectionStatus);
+  if (status === 'connected') return null;
+  const isOffline = status === 'offline';
+  return (
+    <div
+      style={{
+        position: 'absolute', top: 0, left: 0, right: 0,
+        background: isOffline ? '#c0392b' : '#d4ac0d',
+        color: 'white',
+        padding: '6px 12px',
+        fontSize: 13,
+        fontWeight: 600,
+        textAlign: 'center',
+        zIndex: 25,
+        letterSpacing: '0.02em',
+      }}
+    >
+      {isOffline ? 'Offline — retrying…' : 'Reconnecting…'}
     </div>
   );
 }

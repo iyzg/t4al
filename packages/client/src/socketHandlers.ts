@@ -12,13 +12,32 @@ export function registerSocketHandlers() {
   const store = useGameStore.getState;
 
   // ── Connect / reconnect ──
+  let wasOffline = false;
+  let offlineTimer: ReturnType<typeof setTimeout> | null = null;
+
   socket.on('connect', () => {
+    if (offlineTimer) { clearTimeout(offlineTimer); offlineTimer = null; }
+    store().setConnectionStatus('connected');
+    if (wasOffline) {
+      store().showToast('Back online', 'info');
+      wasOffline = false;
+    }
     const { gameId, teamId, deviceId, adminCode, isAdmin } = store();
     if (isAdmin && gameId && adminCode) {
       socket.emit('admin:join', { gameId, adminCode });
     } else if (gameId && teamId && deviceId) {
       socket.emit('game:join', { gameId, teamId, deviceId });
     }
+  });
+
+  socket.on('disconnect', () => {
+    store().setConnectionStatus('reconnecting');
+    wasOffline = true;
+    // After 8s still disconnected, escalate to "offline" copy
+    if (offlineTimer) clearTimeout(offlineTimer);
+    offlineTimer = setTimeout(() => {
+      if (!socket.connected) store().setConnectionStatus('offline');
+    }, 8000);
   });
 
   // ── Full snapshot on join/reconnect ──
