@@ -196,13 +196,14 @@ export default function GamePage() {
 
     challengeList.forEach((c) => {
       if (c.status !== 'active') return;
+      const teamsHere = getTeamsOnChallenge(c.id, teamSnapshots);
       const existing = markersRef.current.get(c.id);
       if (existing) {
         existing.setLngLat([c.lng, c.lat]);
-        updatePinChip(existing.getElement(), c, activeChallengeId);
+        updatePinChip(existing.getElement(), c, activeChallengeId, teamsHere);
         return;
       }
-      const el = createPinElement(c, activeChallengeId, expireMinutes);
+      const el = createPinElement(c, activeChallengeId, expireMinutes, teamsHere);
       el.addEventListener('click', (e) => {
         e.stopPropagation();
         const chip = el.querySelector('.pin-chip') as HTMLElement | null;
@@ -1068,6 +1069,7 @@ function createPinElement(
   c: Challenge,
   activeChallengeId: string | null,
   expireMinutes: number,
+  teamsHere: TeamSnapshot[],
 ): HTMLElement {
   const outer = document.createElement('div');
   // IMPORTANT: do NOT set `position` inline. MapLibre's .maplibregl-marker
@@ -1115,6 +1117,14 @@ function createPinElement(
   svg.appendChild(chip);
   renderChipSvg(chip, c, activeChallengeId);
 
+  // Team-on-challenge dots — small colored dots placed evenly around the chip
+  // perimeter, one per team currently on this challenge. Lives inside the SVG
+  // (siblings to chip + arc) so positioning is in chip-coord space.
+  const dotsLayer = document.createElementNS(SVG_NS, 'g');
+  dotsLayer.setAttribute('class', 'pin-team-dots');
+  svg.appendChild(dotsLayer);
+  renderTeamDots(dotsLayer, teamsHere);
+
   outer.appendChild(svg);
 
   // Token pill below the chip — shows the value (or "???" for variable/wager).
@@ -1145,9 +1155,51 @@ function pillContent(c: Challenge): string {
 
 // Update the chip only — border weight, wager notches, active state.
 // The timer arc updates itself every second via the component-level interval.
-function updatePinChip(outer: HTMLElement, c: Challenge, activeChallengeId: string | null) {
+function updatePinChip(
+  outer: HTMLElement,
+  c: Challenge,
+  activeChallengeId: string | null,
+  teamsHere: TeamSnapshot[],
+) {
   const chip = outer.querySelector('.pin-chip');
   if (chip) renderChipSvg(chip as SVGElement, c, activeChallengeId);
+  const dots = outer.querySelector('.pin-team-dots');
+  if (dots) renderTeamDots(dots as SVGElement, teamsHere);
+}
+
+// Place team-color dots along an arc at the TOP of the chip, centered at top
+// middle. With N teams, dots are spaced ~28° apart symmetrically around -90°
+// (top). At N=2 it reads as a flat horizontal pair; at N=3+ it visibly curves
+// along the top half of the circle, never crossing past the equator.
+const TEAM_DOT_RADIUS  = 5;         // dot radius in SVG units
+const TEAM_DOT_ORBIT   = 27;        // distance from chip center to dot center
+const TEAM_DOT_SPACING = (Math.PI / 180) * 28;
+const TEAM_DOT_MAX     = 7;
+
+function renderTeamDots(layer: SVGElement, teams: TeamSnapshot[]) {
+  layer.textContent = '';
+  if (teams.length === 0) return;
+  const visible = teams.slice(0, TEAM_DOT_MAX);
+  const N = visible.length;
+  // Arc spans (N-1) * spacing, centered at top (-π/2). First dot at the
+  // leftmost angle; subsequent dots advance clockwise by TEAM_DOT_SPACING.
+  const startAngle = -Math.PI / 2 - ((N - 1) / 2) * TEAM_DOT_SPACING;
+  for (let i = 0; i < N; i++) {
+    const angle = startAngle + i * TEAM_DOT_SPACING;
+    const cx = TEAM_DOT_ORBIT * Math.cos(angle);
+    const cy = TEAM_DOT_ORBIT * Math.sin(angle);
+    const dot = document.createElementNS(SVG_NS, 'circle');
+    dot.setAttribute('cx', String(cx));
+    dot.setAttribute('cy', String(cy));
+    dot.setAttribute('r', String(TEAM_DOT_RADIUS));
+    dot.setAttribute('fill', visible[i].color);
+    dot.setAttribute('stroke', 'white');
+    dot.setAttribute('stroke-width', '1.5');
+    const title = document.createElementNS(SVG_NS, 'title');
+    title.textContent = visible[i].name;
+    dot.appendChild(title);
+    layer.appendChild(dot);
+  }
 }
 
 function renderChipSvg(chip: SVGElement, c: Challenge, activeChallengeId: string | null) {
