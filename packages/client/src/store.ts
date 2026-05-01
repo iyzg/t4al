@@ -39,8 +39,8 @@ export interface GameStore {
   // Device-local GPS (from navigator.geolocation)
   myLocation: { lat: number; lng: number } | null;
 
-  // Ephemeral UI state
-  toast:         { message: string; kind: 'error' | 'info' } | null;
+  // Ephemeral UI state — toast is a queue; oldest first
+  toasts:        Array<{ id: number; message: string; kind: 'error' | 'info' }>;
   startedLocally: Set<string>;  // challengeIds we've started since last map reset
                                   // (used so description stays revealed after walking out of range)
 
@@ -67,7 +67,7 @@ export interface GameStore {
   clearStartedLocally:  (challengeId: string) => void;
 
   showToast:             (message: string, kind?: 'error' | 'info') => void;
-  dismissToast:          () => void;
+  dismissToast:          (id: number) => void;
 }
 
 export const useGameStore = create<GameStore>()((set, get) => ({
@@ -92,7 +92,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
 
   myLocation: null,
 
-  toast: null,
+  toasts: [],
   startedLocally: new Set(),
 
   setIdentity: ({ gameId, teamId, teamColor, deviceId }) =>
@@ -229,8 +229,10 @@ export const useGameStore = create<GameStore>()((set, get) => ({
       return { startedLocally: next };
     }),
 
-  showToast: (message, kind = 'error') => set({ toast: { message, kind } }),
-  dismissToast: () => set({ toast: null }),
+  showToast: (message, kind = 'error') => set((s) => ({
+    toasts: [...s.toasts, { id: Date.now() + Math.random(), message, kind }],
+  })),
+  dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 }));
 
 // Generate or retrieve a persistent deviceId from localStorage.
