@@ -5,6 +5,7 @@ import { MIN_PROXIMITY_METERS, MAX_PROXIMITY_METERS } from '@t4al/shared';
 import type { ChallengeType } from '@t4al/shared';
 import { requireAdmin, requireLobby } from './middleware.js';
 import { mapChallenge } from '../db/mappers.js';
+import * as lifecycle from '../lifecycle.js';
 
 const router = Router({ mergeParams: true });
 
@@ -163,6 +164,39 @@ router.put('/:challengeId',
       return;
     }
     res.json(mapChallenge(result.rows[0]));
+  }),
+);
+
+// POST /api/games/:gameId/challenges/:challengeId/force-expire — admin force-expires
+// an active challenge during a live game. Reuses the same lifecycle path the
+// natural expiry timer uses, so teams get yanked and the queue refills.
+router.post('/:challengeId/force-expire',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    if ((req as any).gameStatus !== 'active') {
+      res.status(409).json({ error: 'force-expire only allowed while game is active' });
+      return;
+    }
+    const gameId = (req as any).resolvedGameId as string;
+    const challengeIdParam = req.params.challengeId;
+    const challengeId = Array.isArray(challengeIdParam) ? challengeIdParam[0] : challengeIdParam;
+
+    const r = await pool.query(
+      'SELECT status FROM challenges WHERE id = $1 AND game_id = $2',
+      [challengeId, gameId],
+    );
+    if (r.rows.length === 0) {
+      res.status(404).json({ error: 'challenge not found' });
+      return;
+    }
+    if (r.rows[0].status !== 'active') {
+      res.status(409).json({ error: `challenge is ${r.rows[0].status}, not active` });
+      return;
+    }
+
+    const io = req.app.get('io');
+    await lifecycle.expireChallenge(io, gameId, challengeId);
+    res.json({ ok: true });
   }),
 );
 

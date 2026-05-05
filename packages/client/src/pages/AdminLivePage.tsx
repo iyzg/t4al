@@ -198,6 +198,15 @@ export default function AdminLivePage() {
     if (!res.ok) { const e = await res.json().catch(() => null); setError(e?.error || 'End failed'); }
   }
 
+  async function handleForceExpire(challengeId: string, name: string) {
+    if (!gameId) return;
+    if (!confirm(`Force-expire "${name}"? Any team currently on it will be yanked.`)) return;
+    const res = await fetch(`/api/games/${gameId}/challenges/${challengeId}/force-expire`, {
+      method: 'POST', headers: adminHeaders(gameId),
+    });
+    if (!res.ok) { const e = await res.json().catch(() => null); setError(e?.error || 'Force-expire failed'); }
+  }
+
   async function handleReassign(deviceId: string, newTeamId: string) {
     if (!gameId) return;
     const res = await fetch(`/api/games/${gameId}/reassign-device`, {
@@ -287,9 +296,9 @@ export default function AdminLivePage() {
           {statusBuckets.queued.length} queued · {statusBuckets.active.length} active · {statusBuckets.claimed.length} claimed · {statusBuckets.expired.length} expired
         </div>
         {[...challenges].sort((a, b) => a.sortOrder - b.sortOrder).map((c) => (
-          <div key={c.id} style={{ marginBottom: 4, fontSize: 13 }}>
+          <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, fontSize: 13 }}>
             <span style={{
-              fontSize: 10, padding: '1px 6px', borderRadius: 8, marginRight: 6,
+              fontSize: 10, padding: '1px 6px', borderRadius: 8,
               background: typeColor(c.type), fontWeight: 'bold', letterSpacing: 0.5,
             }}>
               {c.type.charAt(0).toUpperCase()}
@@ -300,8 +309,20 @@ export default function AdminLivePage() {
                    : c.status === 'expired' ? '#e74c3c' : '#888',
             }}>
               [{c.status}]
-            </span>{' '}
-            {c.name}
+            </span>
+            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+            {gameStatus === 'active' && c.status === 'active' && (
+              <button
+                onClick={() => handleForceExpire(c.id, c.name)}
+                title="Force-expire this challenge"
+                style={{
+                  padding: '2px 8px', fontSize: 11, background: '#e74c3c',
+                  border: 'none', borderRadius: 3, color: 'white', cursor: 'pointer',
+                }}
+              >
+                Expire
+              </button>
+            )}
           </div>
         ))}
 

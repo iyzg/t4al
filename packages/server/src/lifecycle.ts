@@ -56,7 +56,10 @@ export function scheduleChallengeExpiry(
 }
 
 // Fire an expired challenge: flip DB row, yank teams, broadcast, refill queue.
+// Safe to call from either the natural expiry timer or an admin force-expire.
 export async function expireChallenge(io: Server, gameId: string, challengeId: string) {
+  const pending = challengeTimers.get(challengeId);
+  if (pending) clearTimeout(pending);
   challengeTimers.delete(challengeId);
   const expired = await repo.expireChallengeRow(challengeId);
   if (!expired) return; // already claimed or expired (race)
