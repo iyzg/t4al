@@ -392,7 +392,7 @@ const ORANGE = '#E88B3E';
 const GREY_BTN = '#E2E2E2';
 const GREY_BTN_TEXT = '#333333';
 
-interface ChallengeCardProps {
+export interface ChallengeCardProps {
   challenge: Challenge;
   descriptionVisible: boolean;
   distance: number | null;
@@ -437,7 +437,7 @@ function useNowTick(intervalMs = 1000): number {
   return now;
 }
 
-function ChallengeCard(props: ChallengeCardProps) {
+export function ChallengeCard(props: ChallengeCardProps) {
   const {
     challenge: c, descriptionVisible, distance, inRange, isMyActive,
     activeChallengeId, wagerAmount, tokens, expireMinutes, isClosing,

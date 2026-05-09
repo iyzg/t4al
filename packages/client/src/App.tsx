@@ -6,6 +6,7 @@ import AdminLivePage from './pages/AdminLivePage';
 import AdminEntryPage from './pages/AdminEntryPage';
 import CreateGamePage from './pages/CreateGamePage';
 import EndPage from './pages/EndPage';
+import PreviewPage from './pages/PreviewPage';
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
         <Route path="/" element={<CreateGamePage />} />
         <Route path="/join" element={<JoinPage />} />
         <Route path="/admin" element={<AdminEntryPage />} />
+        <Route path="/preview" element={<PreviewPage />} />
         <Route path="/game/:gameId" element={<GamePage />} />
         <Route path="/game/:gameId/admin/setup" element={<AdminSetupPage />} />
         <Route path="/game/:gameId/admin" element={<AdminLivePage />} />
