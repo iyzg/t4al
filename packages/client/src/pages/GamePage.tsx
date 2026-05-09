@@ -655,7 +655,7 @@ function ActiveActions(props: {
   if (challenge.type === 'normal') {
     return (
       <ButtonPair>
-        <GreyButton onClick={onAbandon}>Give Up</GreyButton>
+        <GreyHoldButton onComplete={onAbandon} ariaLabel="Hold to give up">Hold to give up</GreyHoldButton>
         <OrangeHoldButton onComplete={() => onComplete()} ariaLabel="Hold to claim">
           <ClaimIcon size={16} /> Hold to claim
         </OrangeHoldButton>
@@ -667,7 +667,7 @@ function ActiveActions(props: {
     // Tap Claim to open the score-entry sub-view — the sub-view's Claim is the 3s hold.
     return (
       <ButtonPair>
-        <GreyButton onClick={onAbandon}>Give Up</GreyButton>
+        <GreyHoldButton onComplete={onAbandon} ariaLabel="Hold to give up">Hold to give up</GreyHoldButton>
         <OrangeButton onClick={onEnterScoreEntry}>
           <ClaimIcon size={16} /> Claim
         </OrangeButton>
