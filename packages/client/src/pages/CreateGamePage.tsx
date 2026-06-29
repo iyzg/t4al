@@ -5,6 +5,11 @@ import {
   DEFAULT_CHALLENGE_EXPIRE_MINUTES,
   DEFAULT_STARTING_TOKENS,
 } from '@t4al/shared';
+import { PageShell, Card, BrandLine, StatusPill, Field, Divider, PrimaryButton, SecondaryButton } from '../components/ui';
+import {
+  textInput, fieldLabel, cardTitle, subtitle, errorText,
+  CREAM, FILL, INK, INK_SOFT, ORANGE_TEXT, HAIRLINE, STATUS_COLORS,
+} from '../theme';
 
 export default function CreateGamePage() {
   const navigate = useNavigate();
@@ -55,101 +60,129 @@ export default function CreateGamePage() {
 
   if (created) {
     return (
-      <div style={{ padding: '2rem', maxWidth: 500, margin: '0 auto' }}>
-        <h1>Game Created</h1>
+      <PageShell>
+        <Card>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: 14,
+          }}>
+            <BrandLine />
+            <StatusPill dot={STATUS_COLORS.claimed}>Game created</StatusPill>
+          </div>
 
-        <div style={{ background: '#1a1a2e', color: 'white', padding: 20, borderRadius: 8, marginBottom: 16 }}>
-          <p><strong>Join code:</strong> <code style={{ fontSize: '1.6rem', letterSpacing: 3 }}>{created.joinCode}</code></p>
-          <p style={{ opacity: 0.6, fontSize: 13 }}>Share this with players so they can join.</p>
-          <p><strong>Admin code:</strong> <code style={{ fontSize: '1rem', wordBreak: 'break-all' }}>{created.adminCode}</code></p>
-          <p style={{ opacity: 0.6, fontSize: 13 }}>Saved to localStorage. Keep it secret — it unlocks admin pages.</p>
-        </div>
+          <h1 style={cardTitle}>{name || 'Your game'}</h1>
+          <p style={subtitle}>Share the join code with players, then set up your challenges.</p>
 
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            onClick={() => navigate(`/game/${created.id}/admin/setup`)}
-            style={{ flex: 1, padding: 12, fontSize: '1rem', background: '#3498db', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}
-          >
-            Set up challenges
-          </button>
-          <button
-            onClick={() => navigate(`/game/${created.id}/admin`)}
-            style={{ flex: 1, padding: 12, fontSize: '1rem', background: '#2ecc71', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}
-          >
-            Admin panel
-          </button>
-        </div>
-      </div>
+          <Divider />
+
+          {/* Join code — the player-facing code, shown big and tappable-clear. */}
+          <p style={{ ...fieldLabel, marginBottom: 8 }}>Join code</p>
+          <div style={{
+            background: CREAM, borderRadius: 12, padding: '16px 18px',
+            textAlign: 'center',
+          }}>
+            <div style={{
+              fontSize: 38, fontWeight: 700, letterSpacing: '0.28em',
+              color: INK, fontVariantNumeric: 'tabular-nums',
+              paddingLeft: '0.28em',
+            }}>
+              {created.joinCode}
+            </div>
+            <p style={{ margin: '6px 0 0', fontSize: 12, color: ORANGE_TEXT, fontWeight: 600 }}>
+              Players enter this at the join screen.
+            </p>
+          </div>
+
+          {/* Admin code — secret; persisted to localStorage already. */}
+          <p style={{ ...fieldLabel, margin: '18px 0 8px' }}>Admin code</p>
+          <div style={{
+            background: FILL, borderRadius: 12, padding: '12px 14px',
+            border: `1px solid ${HAIRLINE}`,
+          }}>
+            <code style={{
+              display: 'block', fontSize: 14, color: INK, wordBreak: 'break-all',
+              lineHeight: 1.4,
+            }}>
+              {created.adminCode}
+            </code>
+            <p style={{ margin: '6px 0 0', fontSize: 12, color: INK_SOFT }}>
+              Saved on this device. Keep it secret — it unlocks the admin pages.
+            </p>
+          </div>
+
+          <Divider />
+
+          <div style={{ display: 'flex', gap: 10 }}>
+            <SecondaryButton onClick={() => navigate(`/game/${created.id}/admin`)}>
+              Admin panel
+            </SecondaryButton>
+            <PrimaryButton onClick={() => navigate(`/game/${created.id}/admin/setup`)} style={{ marginTop: 0 }}>
+              Set up challenges
+            </PrimaryButton>
+          </div>
+        </Card>
+      </PageShell>
     );
   }
 
   return (
-    <div style={{ padding: '2rem', maxWidth: 480, margin: '0 auto' }}>
-      <h1>Create a Game</h1>
+    <PageShell>
+      <Card>
+        <BrandLine />
+        <h1 style={cardTitle}>Create a game</h1>
+        <p style={{ ...subtitle, marginBottom: 18 }}>
+          Set the rules, then place challenges on the map.
+        </p>
 
-      <Field label="Game name">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. Friday Night Hunt"
-          style={inputStyle}
-        />
-      </Field>
+        <Field label="Game name">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }}
+            placeholder="e.g. Friday Night Hunt"
+            className="loop-input"
+            style={textInput}
+          />
+        </Field>
 
-      <Field label="Duration (minutes)">
-        <input
-          type="number" min={1} value={durationMinutes}
-          onChange={(e) => setDurationMinutes(Number(e.target.value) || 0)}
-          style={inputStyle}
-        />
-      </Field>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <NumberField label="Duration (min)" min={1} value={durationMinutes}
+            onChange={(v) => setDurationMinutes(v || 0)} />
+          <NumberField label="Active on map (K)" min={1} value={activeChallengeCount}
+            onChange={(v) => setActiveChallengeCount(Math.max(1, v || 1))} />
+          <NumberField label="Challenge expiry (min)" min={1} value={challengeExpireMinutes}
+            onChange={(v) => setChallengeExpireMinutes(Math.max(1, v || 1))} />
+          <NumberField label="Starting tokens" min={0} value={startingTokens}
+            onChange={(v) => setStartingTokens(Math.max(0, v || 0))} />
+        </div>
 
-      <Field label="Active challenges on map (K)">
-        <input
-          type="number" min={1} value={activeChallengeCount}
-          onChange={(e) => setActiveChallengeCount(Math.max(1, Number(e.target.value) || 1))}
-          style={inputStyle}
-        />
-      </Field>
+        <PrimaryButton onClick={handleCreate} disabled={creating} style={{ marginTop: 18 }}>
+          {creating ? 'Creating…' : 'Create game'}
+        </PrimaryButton>
 
-      <Field label="Challenge expiration (minutes)">
-        <input
-          type="number" min={1} value={challengeExpireMinutes}
-          onChange={(e) => setChallengeExpireMinutes(Math.max(1, Number(e.target.value) || 1))}
-          style={inputStyle}
-        />
-      </Field>
-
-      <Field label="Starting tokens per team">
-        <input
-          type="number" min={0} value={startingTokens}
-          onChange={(e) => setStartingTokens(Math.max(0, Number(e.target.value) || 0))}
-          style={inputStyle}
-        />
-      </Field>
-
-      {error && <p style={{ color: '#e74c3c' }}>{error}</p>}
-
-      <button
-        onClick={handleCreate} disabled={creating}
-        style={{ padding: '0.75rem 1.5rem', fontSize: '1.1rem', background: '#3498db', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', opacity: creating ? 0.5 : 1 }}
-      >
-        {creating ? 'Creating…' : 'Create Game'}
-      </button>
-    </div>
+        {error && <p style={errorText}>{error}</p>}
+      </Card>
+    </PageShell>
   );
 }
 
-const inputStyle: React.CSSProperties = {
-  fontSize: '1.05rem', padding: '0.5rem', width: '100%', boxSizing: 'border-box',
-  background: '#2a2a3e', color: 'white', border: '1px solid #444', borderRadius: 4,
-};
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function NumberField({
+  label, value, min, onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  onChange: (v: number) => void;
+}) {
   return (
-    <div style={{ marginBottom: 14 }}>
-      <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 14 }}>{label}</label>
-      {children}
+    <div>
+      <label style={{ ...fieldLabel, display: 'block' }}>{label}</label>
+      <input
+        type="number" min={min} value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="loop-input"
+        style={textInput}
+      />
     </div>
   );
 }
