@@ -104,6 +104,52 @@ button {
   animation: pin-pop 260ms ease-out;
 }
 
+/* Admin setup: the floating top-right panels (challenge-order list and the
+   new/edit-challenge popover) ease into place from their anchored corner
+   instead of snapping in when toggled. Origin is top-right so the settle
+   reads as "growing out of" the corner it's pinned to. */
+@keyframes setup-panel-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.setup-popover {
+  transform-origin: top right;
+  animation: setup-panel-in 190ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Admin setup: the top instruction bar eases back down into place when it
+   reappears (e.g. after the challenge-order panel closes) instead of snapping. */
+@keyframes setup-topbar-in {
+  from { opacity: 0; transform: translateY(-10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.setup-topbar {
+  animation: setup-topbar-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* On-map challenge tooltips (setup + live admin). Brand card look instead of
+   MapLibre's default; non-interactive so it never eats marker hover/taps. */
+/* Fade + scale on show AND hide (same curve, opposite directions), driven by
+   the `.is-visible` class the page toggles — so the tooltip eases out on
+   mouse-leave instead of snapping away. */
+.challenge-popup .maplibregl-popup-content {
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid #ECE8DF;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  transform-origin: center bottom;
+  opacity: 0;
+  transform: scale(0.9) translateY(4px);
+  transition: opacity 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.challenge-popup.is-visible .maplibregl-popup-content {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
+.challenge-popup { pointer-events: none; }
+.challenge-popup .maplibregl-popup-tip { display: none; }
+
 /* End-page reveal: each leaderboard row slides up + fades in.  Delay is
    set inline per row via animation-delay. */
 @keyframes endpage-row {
