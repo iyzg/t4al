@@ -34,6 +34,7 @@ export interface GameStore {
   // Private team state (for the current client's team only)
   tokens:            number;
   activeChallengeId: string | null;
+  activeChallengeDescription: string | null;  // revealed only after we start it
   wagerAmount:       number | null;
 
   // Device-local GPS (from navigator.geolocation)
@@ -93,6 +94,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
 
   tokens: 0,
   activeChallengeId: null,
+  activeChallengeDescription: null,
   wagerAmount: null,
 
   myLocation: null,
@@ -110,7 +112,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
       adminCode: null, isAdmin: false,
       game: null, gameStatus: null, finalStandings: null,
       challenges: {}, leaderboard: [], teamSnapshots: [],
-      tokens: 0, activeChallengeId: null, wagerAmount: null,
+      tokens: 0, activeChallengeId: null, activeChallengeDescription: null, wagerAmount: null,
       startedLocally: new Set(),
     }),
 
@@ -133,6 +135,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
 
   setTeamPrivateState: (state) => set({
     activeChallengeId: state.activeChallengeId,
+    activeChallengeDescription: state.activeChallengeDescription ?? null,
     wagerAmount:       state.wagerAmount,
     tokens:            state.tokens,
   }),

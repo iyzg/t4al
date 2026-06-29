@@ -38,6 +38,35 @@ function getTeamsOnChallenge(challengeId: string, teamSnapshots: TeamSnapshot[])
   return teamSnapshots.filter((t) => t.activeChallengeId === challengeId);
 }
 
+// Stable per-challenge gibberish, shown in the Flow Block obscuring font before
+// a team starts — keeps the "there's a hidden brief here" look without leaking
+// the real text (the server hasn't sent it yet). Seeded by id so it never
+// flickers, and its length is random so it doesn't hint the real length.
+function obscuredText(seed: string): string {
+  let h = 1779033703 ^ seed.length;
+  for (let i = 0; i < seed.length; i++) {
+    h = Math.imul(h ^ seed.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  let a = h >>> 0;
+  const rand = () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const letters = 'abcdefghijklmnopqrstuvwxyz';
+  const words: string[] = [];
+  const n = 14 + Math.floor(rand() * 8);
+  for (let i = 0; i < n; i++) {
+    let w = '';
+    const len = 2 + Math.floor(rand() * 7);
+    for (let k = 0; k < len; k++) w += letters[Math.floor(rand() * 26)];
+    words.push(w);
+  }
+  return words.join(' ');
+}
+
 
 export default function GamePage() {
   const navigate = useNavigate();
@@ -57,7 +86,7 @@ export default function GamePage() {
   const gameId            = useGameStore((s) => s.gameId);
   const game              = useGameStore((s) => s.game);
   const teamSnapshots     = useGameStore((s) => s.teamSnapshots);
-  const startedLocally   = useGameStore((s) => s.startedLocally);
+  const activeChallengeDescription = useGameStore((s) => s.activeChallengeDescription);
 
   const [selectedChallengeId, setSelectedChallengeId] = useState<string | null>(null);
   const [myPos, setMyPos] = useState<{ lat: number; lng: number } | null>(null);
@@ -324,9 +353,10 @@ export default function GamePage() {
     : false;
   const isMyActive = displayedChallenge?.id === activeChallengeId;
 
-  // Description visibility: revealed when in range OR we've started this challenge.
-  const descriptionVisible = displayedChallenge != null &&
-    (inRange || isMyActive || startedLocally.has(displayedChallenge.id));
+  // The server withholds descriptions until a team starts (commits to) the
+  // challenge; the text then arrives via team:state and shows only while it's
+  // our active challenge — so it hides again on abandon / claim / expire.
+  const descriptionVisible = isMyActive;
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100vh' }}>
@@ -359,7 +389,7 @@ export default function GamePage() {
       {displayedChallenge && (
         <ChallengeCard
           key={displayedChallenge.id}
-          challenge={displayedChallenge}
+          challenge={isMyActive ? { ...displayedChallenge, description: activeChallengeDescription ?? '' } : displayedChallenge}
           descriptionVisible={descriptionVisible}
           distance={distance}
           inRange={inRange}
@@ -573,7 +603,7 @@ function MainBody({
           WebkitUserSelect: descriptionVisible ? 'text' : 'none',
         }}
       >
-        {c.description}
+        {descriptionVisible ? c.description : obscuredText(c.id)}
       </div>
 
       <div style={{ marginTop: 18 }}>
