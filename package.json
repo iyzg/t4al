@@ -6,7 +6,8 @@
   ],
   "scripts": {
     "dev": "concurrently -n server,client -c blue,magenta 'npm:dev --workspace=@t4al/server' 'npm:dev --workspace=@t4al/client'",
-    "puppet": "tsx tools/puppet.ts"
+    "puppet": "tsx tools/puppet.ts",
+    "demo:admin": "node tools/demo-admin.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
