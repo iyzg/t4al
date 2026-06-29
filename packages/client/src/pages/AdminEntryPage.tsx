@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { PageShell, Card, BrandLine, StatusPill, Field, PrimaryButton } from '../components/ui';
+import { textInput, subtitle, errorText, cardTitle } from '../theme';
 
 interface GameRow { id: string; name: string; status: string }
 
@@ -53,65 +55,61 @@ export default function AdminEntryPage() {
   }
 
   return (
-    <div style={{ padding: '2rem', maxWidth: 480, margin: '0 auto' }}>
-      <h1>Admin Login</h1>
-      <p style={{ opacity: 0.7, fontSize: 14, marginBottom: 20 }}>
-        Enter the game's join code and admin code to access the admin dashboard from this device.
-      </p>
+    <PageShell>
+      <Card>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          marginBottom: 14,
+        }}>
+          <BrandLine />
+          <StatusPill>Admin</StatusPill>
+        </div>
 
-      <Field label="Join code">
-        <input
-          value={joinCode}
-          onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-          placeholder="ABCD"
-          autoCapitalize="characters"
-          autoCorrect="off"
-          spellCheck={false}
-          maxLength={8}
-          style={{ ...inputStyle, fontSize: '1.4rem', letterSpacing: 3, textAlign: 'center' }}
-        />
-      </Field>
+        <h1 style={cardTitle}>Admin login</h1>
+        <p style={{ ...subtitle, marginBottom: 18 }}>
+          Enter the game's join code and admin code to manage it from this device.
+        </p>
 
-      <Field label="Admin code">
-        <input
-          value={adminCode}
-          onChange={(e) => setAdminCode(e.target.value)}
-          placeholder="paste admin code"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          style={inputStyle}
-        />
-      </Field>
+        <Field label="Join code">
+          <input
+            value={joinCode}
+            onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(); }}
+            placeholder="ABCD"
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck={false}
+            maxLength={8}
+            className="loop-input"
+            style={{
+              ...textInput,
+              fontSize: 28, fontWeight: 700, letterSpacing: '0.3em',
+              textAlign: 'center', padding: '12px 8px',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          />
+        </Field>
 
-      {error && <p style={{ color: '#e74c3c' }}>{error}</p>}
+        <Field label="Admin code">
+          <input
+            value={adminCode}
+            onChange={(e) => setAdminCode(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(); }}
+            placeholder="paste admin code"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            className="loop-input"
+            style={textInput}
+          />
+        </Field>
 
-      <button
-        onClick={handleSubmit}
-        disabled={submitting}
-        style={{
-          padding: '0.75rem 1.5rem', fontSize: '1.1rem',
-          background: '#3498db', color: 'white', border: 'none',
-          borderRadius: 6, cursor: 'pointer', opacity: submitting ? 0.5 : 1,
-          width: '100%',
-        }}
-      >
-        {submitting ? 'Verifying…' : 'Enter admin'}
-      </button>
-    </div>
-  );
-}
+        <PrimaryButton onClick={handleSubmit} disabled={submitting} style={{ marginTop: 4 }}>
+          {submitting ? 'Verifying…' : 'Enter admin'}
+        </PrimaryButton>
 
-const inputStyle: React.CSSProperties = {
-  fontSize: '1.05rem', padding: '0.6rem', width: '100%', boxSizing: 'border-box',
-  background: '#2a2a3e', color: 'white', border: '1px solid #444', borderRadius: 4,
-};
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 14 }}>{label}</label>
-      {children}
-    </div>
+        {error && <p style={errorText}>{error}</p>}
+      </Card>
+    </PageShell>
   );
 }
