@@ -1,11 +1,27 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import maplibregl from 'maplibre-gl';
 import { getMapStyle, CHICAGO_CENTER, CHICAGO_BOUNDS, MIN_ZOOM, MAX_ZOOM } from '../mapStyle';
 import { ensurePmtilesProtocol } from '../mapSetup';
 import type { Challenge, ChallengeType, Game } from '@t4al/shared';
+import {
+  typeColor, ORANGE, INK, INK_SOFT, WHITE, FILL, HAIRLINE, BRAND_GREY,
+  DISABLED_BG, DANGER,
+  PANEL_SHADOW, RADIUS_PANEL, RADIUS_FIELD, RADIUS_PILL, textInput,
+} from '../theme';
+import { PlayIcon, PauseIcon, ReplayIcon, ChevronLeftIcon, ChevronRightIcon } from '../components/icons';
+import { challengePopupHTML } from '../challengePopup';
 
 ensurePmtilesProtocol();
+
+// Compact white-card input styling for the floating map popover (the global
+// dark input default would otherwise show through on the light panel).
+const popoverInput: React.CSSProperties = {
+  ...textInput, fontSize: 14, padding: '8px 10px', borderRadius: 8,
+};
+const popoverLabel: React.CSSProperties = {
+  fontSize: 12, fontWeight: 600, color: INK_SOFT, margin: '4px 0 0',
+};
 
 type ChallengeForm = {
   lat: number;
@@ -31,10 +47,6 @@ const BLANK_FORM: ChallengeForm = {
   proximityMeters: 100,
 };
 
-function typeColor(t: ChallengeType): string {
-  return t === 'normal' ? '#3498db' : t === 'variable' ? '#2ecc71' : '#9b59b6';
-}
-
 /** Build a GeoJSON polygon approximating a circle on the map */
 function circlePolygon(lat: number, lng: number, radiusMeters: number, steps = 64): GeoJSON.Feature {
   const coords: [number, number][] = [];
@@ -57,96 +69,170 @@ function typeBadgeText(t: ChallengeType): string {
   return t === 'normal' ? 'NORMAL' : t === 'variable' ? 'VARIABLE' : 'WAGER';
 }
 
+// --- Drag-to-reorder activation list ---
+const ROW_H = 44;                 // fixed row height (keeps the drag math exact)
+const ROW_GAP = 8;                // vertical gap between rows
+const PITCH = ROW_H + ROW_GAP;    // slot-to-slot distance
+
+function GripIcon() {
+  return (
+    <svg width="10" height="16" viewBox="0 0 10 16" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <circle cx="2" cy="3" r="1.3" fill="currentColor" />
+      <circle cx="8" cy="3" r="1.3" fill="currentColor" />
+      <circle cx="2" cy="8" r="1.3" fill="currentColor" />
+      <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+      <circle cx="2" cy="13" r="1.3" fill="currentColor" />
+      <circle cx="8" cy="13" r="1.3" fill="currentColor" />
+    </svg>
+  );
+}
+
+function moveArr(arr: string[], from: number, to: number): string[] {
+  const a = arr.slice();
+  const [x] = a.splice(from, 1);
+  a.splice(to, 0, x);
+  return a;
+}
+
 function OrderTimeline({
-  challenges, activeChallengeCount, onClose, onMove,
+  challenges, activeChallengeCount, onClose, onReorder, onPreviewChange,
 }: {
   challenges: SavedChallenge[];
   activeChallengeCount: number;
   onClose: () => void;
-  onMove: (index: number, direction: -1 | 1) => void;
+  onReorder: (orderedIds: string[]) => void;
+  onPreviewChange: (orderedIds: string[] | null) => void;
 }) {
   const sorted = [...challenges].sort((a, b) => a.sortOrder - b.sortOrder);
+  const baseIds = sorted.map((c) => c.id);
+  const byId = new Map(sorted.map((c) => [c.id, c] as const));
+  const n = baseIds.length;
   const K = activeChallengeCount;
-  const spawn = sorted.slice(0, K);
-  const queue = sorted.slice(K);
 
-  function Row({ c, idx, section }: { c: SavedChallenge; idx: number; section: 'spawn' | 'queue' }) {
-    const isLast = idx === sorted.length - 1;
-    const isFirst = idx === 0;
-    const accent = section === 'spawn' ? '#27ae60' : 'transparent';
-    return (
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6,
-        padding: '8px 10px', background: '#2a2a3e', borderRadius: 6,
-        borderLeft: `3px solid ${accent}`,
-      }}>
-        <span style={{ opacity: 0.5, width: 22, fontSize: 12, fontWeight: 'bold' }}>#{idx + 1}</span>
-        <span style={{
-          fontSize: 9, padding: '2px 6px', borderRadius: 3,
-          background: typeColor(c.type), fontWeight: 'bold', letterSpacing: 0.4,
-        }}>
-          {typeBadgeText(c.type)}
-        </span>
-        <span style={{ flex: 1, fontSize: 14 }}>{c.name}</span>
-        <button onClick={() => onMove(idx, -1)} disabled={isFirst}
-          style={{ background: 'none', border: 'none', color: isFirst ? '#555' : 'white', cursor: isFirst ? 'default' : 'pointer', fontSize: 16, padding: '2px 6px' }}>↑</button>
-        <button onClick={() => onMove(idx, 1)} disabled={isLast}
-          style={{ background: 'none', border: 'none', color: isLast ? '#555' : 'white', cursor: isLast ? 'default' : 'pointer', fontSize: 16, padding: '2px 6px' }}>↓</button>
-      </div>
-    );
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [targetSlot, setTargetSlot] = useState(0);
+  const targetSlotRef = useRef(0);
+  const dragInfo = useRef<{ origSlot: number; startY: number } | null>(null);
+  const dyRef = useRef(0);
+  const rowEls = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  const slotY = (slot: number) => slot * PITCH;
+  const containerH = n > 0 ? n * PITCH - ROW_GAP : 0;
+
+  // Display slot for the row at base index i under the current drag. Rows render
+  // in FIXED dom order (baseIds) and only their transform changes, so both drag
+  // directions ease via the same transition — no snap.
+  const slotFor = (i: number, orig: number, target: number) => {
+    if (i === orig) return target;
+    if (orig < target) return i > orig && i <= target ? i - 1 : i;
+    return i >= target && i < orig ? i + 1 : i;
+  };
+
+  function beginDrag(e: React.PointerEvent, id: string) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    const origSlot = baseIds.indexOf(id);
+    dragInfo.current = { origSlot, startY: e.clientY };
+    dyRef.current = 0;
+    targetSlotRef.current = origSlot;
+    setDragId(id);
+    setTargetSlot(origSlot);
+
+    const handleMove = (ev: PointerEvent) => {
+      const info = dragInfo.current;
+      if (!info) return;
+      const dy = ev.clientY - info.startY;
+      dyRef.current = dy;
+      const el = rowEls.current.get(id);
+      if (el) el.style.transform = `translateY(${slotY(info.origSlot) + dy}px) scale(1.03)`;
+      const center = slotY(info.origSlot) + dy + ROW_H / 2;
+      const slot = Math.max(0, Math.min(n - 1, Math.floor(center / PITCH)));
+      if (slot !== targetSlotRef.current) {
+        targetSlotRef.current = slot;
+        setTargetSlot(slot);
+        onPreviewChange(moveArr(baseIds, info.origSlot, slot));
+      }
+    };
+    const handleUp = () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+      const info = dragInfo.current;
+      const finalSlot = targetSlotRef.current;
+      const el = rowEls.current.get(id);
+      // Ease the lifted row into its slot, then commit the new order.
+      if (el && info) {
+        el.style.transition = 'transform 200ms cubic-bezier(0.2,0.8,0.2,1)';
+        void el.offsetHeight; // flush so the transition applies to the next change
+        el.style.transform = `translateY(${slotY(finalSlot)}px) scale(1)`;
+      }
+      dragInfo.current = null;
+      setDragId(null);
+      onPreviewChange(null);
+      if (info && finalSlot !== info.origSlot) onReorder(moveArr(baseIds, info.origSlot, finalSlot));
+    };
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
   }
 
   return (
-    <div style={{
+    <div className="setup-popover" style={{
       position: 'absolute', top: 16, right: 16, width: 360,
-      background: '#1a1a2e', color: 'white', padding: 16, borderRadius: 8,
+      background: WHITE, color: INK, padding: 18, borderRadius: RADIUS_PANEL,
+      boxShadow: PANEL_SHADOW,
       maxHeight: 'calc(100vh - 32px)', overflow: 'auto',
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <h3 style={{ margin: 0 }}>Activation Order</h3>
-        <button onClick={onClose}
-          style={{ background: 'none', border: 'none', color: 'white', fontSize: 18, cursor: 'pointer' }}>×</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: INK }}>Activation order</h3>
+        <button onClick={onClose} aria-label="Close"
+          style={{ background: 'none', border: 'none', color: INK_SOFT, fontSize: 20, lineHeight: 1, cursor: 'pointer', padding: 0 }}>×</button>
       </div>
 
-      {challenges.length === 0 && <p style={{ opacity: 0.5, fontSize: 13 }}>No challenges yet — click the map to add one.</p>}
-
-      {spawn.length > 0 && (
-        <>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0 8px',
-          }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#27ae60' }} />
-            <span style={{ fontSize: 11, fontWeight: 'bold', letterSpacing: 0.6, textTransform: 'uppercase' }}>
-              Spawn at start ({spawn.length}/{K})
-            </span>
-          </div>
-          <p style={{ fontSize: 11, opacity: 0.55, margin: '0 0 8px' }}>
-            These appear on the map the moment the game starts.
-          </p>
-          {spawn.map((c, i) => <Row key={c.id} c={c} idx={i} section="spawn" />)}
-        </>
+      {n === 0 ? (
+        <p style={{ color: INK_SOFT, fontSize: 13 }}>No challenges yet — click the map to add one.</p>
+      ) : (
+        <div style={{ position: 'relative', height: containerH }}>
+          {baseIds.map((id, i) => {
+            const c = byId.get(id)!;
+            const info = dragInfo.current;
+            const isDragged = id === dragId;
+            const slot = dragId && info ? slotFor(i, info.origSlot, targetSlot) : i;
+            const accent = slot < K ? ORANGE : 'transparent';
+            const y = isDragged && info ? slotY(info.origSlot) + dyRef.current : slotY(slot);
+            return (
+              <div key={id}
+                ref={(el) => { if (el) rowEls.current.set(id, el); else rowEls.current.delete(id); }}
+                onPointerDown={(e) => beginDrag(e, id)}
+                style={{
+                  position: 'absolute', left: 0, right: 0, top: 0, height: ROW_H,
+                  transform: isDragged ? `translateY(${y}px) scale(1.03)` : `translateY(${y}px)`,
+                  transition: isDragged ? 'none' : 'transform 200ms cubic-bezier(0.2,0.8,0.2,1)',
+                  zIndex: isDragged ? 5 : 1,
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '0 10px', boxSizing: 'border-box',
+                  background: FILL, borderRadius: 8,
+                  borderLeft: `3px solid ${accent}`,
+                  boxShadow: isDragged ? '0 10px 22px rgba(0,0,0,0.18)' : 'none',
+                  cursor: isDragged ? 'grabbing' : 'grab',
+                  touchAction: 'none', userSelect: 'none',
+                }}>
+                <span style={{ color: INK_SOFT, opacity: 0.45, display: 'inline-flex' }}><GripIcon /></span>
+                <span style={{ color: INK_SOFT, opacity: 0.7, width: 20, fontSize: 12, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>#{slot + 1}</span>
+                <span style={{
+                  fontSize: 9, padding: '2px 6px', borderRadius: 4, color: WHITE,
+                  background: typeColor(c.type), fontWeight: 700, letterSpacing: 0.4, flexShrink: 0,
+                }}>
+                  {typeBadgeText(c.type)}
+                </span>
+                <span style={{ flex: 1, fontSize: 14, color: INK, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</span>
+              </div>
+            );
+          })}
+        </div>
       )}
 
-      {queue.length > 0 && (
-        <>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8, margin: '16px 0 8px',
-          }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#7f8c8d' }} />
-            <span style={{ fontSize: 11, fontWeight: 'bold', letterSpacing: 0.6, textTransform: 'uppercase' }}>
-              Queue ({queue.length})
-            </span>
-          </div>
-          <p style={{ fontSize: 11, opacity: 0.55, margin: '0 0 8px' }}>
-            Each one fills the next open slot when a spawn is claimed or expires.
-          </p>
-          {queue.map((c, i) => <Row key={c.id} c={c} idx={i + spawn.length} section="queue" />)}
-        </>
-      )}
-
-      {sorted.length > 0 && sorted.length <= K && (
-        <p style={{ fontSize: 11, opacity: 0.55, margin: '8px 0 0' }}>
-          Add {K - sorted.length} more to fill all {K} starting slots, or start the game with fewer active challenges.
+      {n > 0 && n <= K && (
+        <p style={{ fontSize: 12, color: INK_SOFT, margin: '12px 0 0', lineHeight: 1.4 }}>
+          Add {K - n} more to fill all {K} starting slots.
         </p>
       )}
     </div>
@@ -162,6 +248,26 @@ export default function AdminSetupPage() {
   const challengesRef = useRef<SavedChallenge[]>([]);
   const editingIdRef = useRef<string | null>(null);
   const popoverRef = useRef<ChallengeForm | null>(null);
+  const hoverPopupRef = useRef<maplibregl.Popup | null>(null);
+
+  const showHoverPopup = useCallback((id: string) => {
+    const cur = challengesRef.current.find((ch) => ch.id === id);
+    const map = mapRef.current;
+    if (!cur || !map) return;
+    if (!hoverPopupRef.current) {
+      hoverPopupRef.current = new maplibregl.Popup({
+        closeButton: false, closeOnClick: false, offset: 16, className: 'challenge-popup',
+      });
+    }
+    const popup = hoverPopupRef.current;
+    popup.setLngLat([cur.lng, cur.lat]).setHTML(challengePopupHTML(cur, { description: true }));
+    if (!popup.isOpen()) popup.addTo(map);
+    const el = popup.getElement();
+    if (el) requestAnimationFrame(() => el.classList.add('is-visible'));
+  }, []);
+  const hideHoverPopup = useCallback(() => {
+    hoverPopupRef.current?.getElement()?.classList.remove('is-visible');
+  }, []);
 
   const [challenges, setChallenges] = useState<SavedChallenge[]>([]);
   const [game, setGame] = useState<Game | null>(null);
@@ -171,6 +277,9 @@ export default function AdminSetupPage() {
   const [saving, setSaving] = useState(false);
   const [showOrderPanel, setShowOrderPanel] = useState(false);
   const [error, setError] = useState('');
+  // Live order preview while dragging in the activation panel — drives the map
+  // marker numbers so they renumber in step with the dragged row.
+  const [previewOrder, setPreviewOrder] = useState<string[] | null>(null);
 
   useEffect(() => { challengesRef.current = challenges; }, [challenges]);
   useEffect(() => { editingIdRef.current = editingId; }, [editingId]);
@@ -209,8 +318,10 @@ export default function AdminSetupPage() {
       previewMarkerRef.current.setLngLat([lng, lat]);
     } else {
       const el = document.createElement('div');
+      // `${ORANGE}73` = brand orange at ~45% alpha (0x73 ≈ 0.45) so the
+      // preview fill tracks the brand accent if it is ever retuned.
       el.style.cssText =
-        'width:20px;height:20px;background:rgba(243,156,18,0.5);border-radius:50%;border:2px dashed #f39c12;pointer-events:none;';
+        `width:20px;height:20px;background:${ORANGE}73;border-radius:50%;border:2px dashed ${ORANGE};pointer-events:none;`;
       previewMarkerRef.current = new maplibregl.Marker({ element: el })
         .setLngLat([lng, lat])
         .addTo(map);
@@ -261,11 +372,11 @@ export default function AdminSetupPage() {
         });
         map.addLayer({
           id: 'radius-circle-fill', type: 'fill', source: 'radius-circle',
-          paint: { 'fill-color': '#f39c12', 'fill-opacity': 0.15 },
+          paint: { 'fill-color': ORANGE, 'fill-opacity': 0.15 },
         });
         map.addLayer({
           id: 'radius-circle-stroke', type: 'line', source: 'radius-circle',
-          paint: { 'line-color': '#f39c12', 'line-width': 2, 'line-dasharray': [2, 2] },
+          paint: { 'line-color': ORANGE, 'line-width': 2, 'line-dasharray': [2, 2] },
         });
       });
 
@@ -277,7 +388,12 @@ export default function AdminSetupPage() {
       });
 
       mapRef.current = map;
-      return () => { map.remove(); mapRef.current = null; };
+      return () => {
+        hoverPopupRef.current?.remove();
+        hoverPopupRef.current = null;
+        map.remove();
+        mapRef.current = null;
+      };
     } catch (err) {
       console.warn('Map failed to initialize:', err);
     }
@@ -310,7 +426,7 @@ export default function AdminSetupPage() {
       el.style.cssText =
         `width:26px;height:26px;background:${typeColor(c.type)};border-radius:50%;border:2px solid white;cursor:pointer;` +
         `display:flex;align-items:center;justify-content:center;color:white;font-weight:bold;font-size:13px;` +
-        `font-family:-apple-system,BlinkMacSystemFont,sans-serif;text-shadow:0 1px 2px rgba(0,0,0,0.5);`;
+        `font-family:'Sora',-apple-system,BlinkMacSystemFont,sans-serif;text-shadow:0 1px 2px rgba(0,0,0,0.5);`;
       el.textContent = String(orderRank);
       const marker = new maplibregl.Marker({ element: el, draggable: false })
         .setLngLat([c.lng, c.lat])
@@ -318,6 +434,7 @@ export default function AdminSetupPage() {
 
       el.addEventListener('click', (ev) => {
         ev.stopPropagation();
+        hideHoverPopup();
         const prevId = editingIdRef.current;
         if (prevId && prevId !== c.id) revertMarker(prevId);
         const fresh = challengesRef.current.find((ch) => ch.id === c.id);
@@ -334,7 +451,11 @@ export default function AdminSetupPage() {
         });
       });
 
+      el.addEventListener('mouseenter', () => showHoverPopup(c.id));
+      el.addEventListener('mouseleave', hideHoverPopup);
+
       marker.on('drag', () => {
+        hideHoverPopup();
         const { lat, lng } = marker.getLngLat();
         const radius = popoverRef.current?.proximityMeters ?? 100;
         updateRadiusCircle(lat, lng, radius);
@@ -346,6 +467,17 @@ export default function AdminSetupPage() {
       markersRef.current.set(c.id, marker);
     });
   }, [challenges, revertMarker]);
+
+  // Live marker numbering: follow the activation-order drag preview when one is
+  // active, otherwise the committed sort order.
+  useEffect(() => {
+    const order = previewOrder
+      ?? [...challenges].sort((a, b) => a.sortOrder - b.sortOrder).map((c) => c.id);
+    order.forEach((id, i) => {
+      const el = markersRef.current.get(id)?.getElement();
+      if (el) el.textContent = String(i + 1);
+    });
+  }, [previewOrder, challenges]);
 
   // Apply sim state styling: claimed = greyed, queued = dashed, active = full color.
   // The `editing` overlay still wins for whichever marker is being edited.
@@ -361,7 +493,7 @@ export default function AdminSetupPage() {
 
       marker.setDraggable(selected);
       const el = marker.getElement();
-      const baseColor = c ? typeColor(c.type) : '#888';
+      const baseColor = c ? typeColor(c.type) : BRAND_GREY;
 
       if (selected) {
         el.style.background = baseColor;
@@ -376,17 +508,23 @@ export default function AdminSetupPage() {
         el.style.borderStyle = 'solid';
         el.style.cursor = 'pointer';
       } else if (state === 'claimed') {
-        el.style.background = '#555';
+        // Simulated "claimed/done" marker: dimmed neutral. Uses BRAND_GREY +
+        // low opacity rather than STATUS_COLORS.claimed (green) so the
+        // scrubber's opacity-based sim language reads as "inactive", not "won".
+        el.style.background = BRAND_GREY;
         el.style.opacity = '0.45';
         el.style.border = '2px solid rgba(255,255,255,0.4)';
         el.style.borderStyle = 'solid';
         el.style.cursor = 'pointer';
       } else {
-        // queued
+        // queued — a faded colored dot. Opacity alone conveys "not live yet";
+        // it keeps the same solid white edge as an active dot so type stays
+        // color-only. (Previously a dashed border, which rendered as a coin/gear
+        // ring on the small circle and was misread as a challenge-type marker.)
         el.style.background = baseColor;
         el.style.opacity = '0.55';
-        el.style.border = '2px dashed rgba(255,255,255,0.6)';
-        el.style.borderStyle = 'dashed';
+        el.style.border = '2px solid rgba(255,255,255,0.85)';
+        el.style.borderStyle = 'solid';
         el.style.cursor = 'pointer';
       }
       el.style.boxShadow = 'none';
@@ -468,15 +606,12 @@ export default function AdminSetupPage() {
     setError('');
   }
 
-  async function moveChallenge(index: number, direction: -1 | 1) {
+  async function commitOrder(orderedIds: string[]) {
     if (!gameId) return;
-    const newIndex = index + direction;
-    if (newIndex < 0 || newIndex >= challenges.length) return;
-
-    const sorted = [...challenges].sort((a, b) => a.sortOrder - b.sortOrder);
-    const [item] = sorted.splice(index, 1);
-    sorted.splice(newIndex, 0, item);
-    const reordered = sorted.map((c, i) => ({ ...c, sortOrder: i + 1 }));
+    const byId = new Map(challenges.map((c) => [c.id, c] as const));
+    const reordered = orderedIds
+      .map((id, i) => { const c = byId.get(id); return c ? { ...c, sortOrder: i + 1 } : null; })
+      .filter((c): c is SavedChallenge => c !== null);
     setChallenges(reordered);
 
     await fetch(`/api/games/${gameId}/challenges/order`, {
@@ -492,21 +627,24 @@ export default function AdminSetupPage() {
 
       {/* Top bar */}
       {!popover && !showOrderPanel && (
-        <div style={{
+        <div className="setup-topbar" style={{
           position: 'absolute', top: 16, left: 16, right: 16,
-          background: 'rgba(0,0,0,0.7)', color: 'white',
-          padding: '8px 16px', borderRadius: 8,
+          background: WHITE, color: INK,
+          padding: '10px 12px 10px 16px', borderRadius: RADIUS_PANEL,
+          boxShadow: PANEL_SHADOW,
           display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
         }}>
-          <span style={{ flex: '1 1 auto' }}>Click anywhere on the map to create a challenge</span>
+          <span style={{ flex: '1 1 auto', fontSize: 14, fontWeight: 500, color: INK_SOFT }}>
+            Click anywhere on the map to create a challenge
+          </span>
           <button onClick={() => setShowOrderPanel(true)}
-            style={{ padding: '4px 12px', background: '#3498db', border: 'none', borderRadius: 4, color: 'white', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            Challenge Order ({challenges.length})
+            style={{ padding: '7px 14px', background: ORANGE, border: 'none', borderRadius: RADIUS_PILL, color: WHITE, cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 13, fontWeight: 700 }}>
+            Challenge order ({challenges.length})
           </button>
-          <a href={`/game/${gameId}/admin`}
-            style={{ color: '#3498db', textDecoration: 'none', whiteSpace: 'nowrap' }}>
-            Admin Panel
-          </a>
+          <Link to={`/game/${gameId}/admin`}
+            style={{ color: ORANGE, textDecoration: 'none', whiteSpace: 'nowrap', fontSize: 14, fontWeight: 600, padding: '0 6px' }}>
+            Admin panel
+          </Link>
         </div>
       )}
 
@@ -514,75 +652,90 @@ export default function AdminSetupPage() {
       {popover && (
         <div className="setup-popover" style={{
           position: 'absolute', top: 16, right: 16, width: 320,
-          background: '#1a1a2e', color: 'white', padding: 16, borderRadius: 8,
+          background: WHITE, color: INK, padding: 18, borderRadius: RADIUS_PANEL,
+          boxShadow: PANEL_SHADOW,
           display: 'flex', flexDirection: 'column', gap: 8,
           maxHeight: 'calc(100vh - 32px)', overflow: 'auto',
         }}>
-          <h3 style={{ margin: 0 }}>{editingId ? 'Edit Challenge' : 'New Challenge'}</h3>
+          <h3 style={{ margin: '0 0 2px', fontSize: 18, fontWeight: 700, color: INK }}>
+            {editingId ? 'Edit challenge' : 'New challenge'}
+          </h3>
 
-          <label>Type</label>
+          <label style={popoverLabel}>Type</label>
           <div style={{ display: 'flex', gap: 6 }}>
-            {(['normal', 'variable', 'wager'] as ChallengeType[]).map((t) => (
-              <button key={t}
-                onClick={() => setPopover({ ...popover, type: t })}
-                style={{
-                  flex: 1, padding: '6px 4px',
-                  background: popover.type === t ? typeColor(t) : '#2a2a3e',
-                  color: 'white', border: 'none', borderRadius: 4,
-                  cursor: 'pointer', fontSize: 12, textTransform: 'uppercase',
-                  fontWeight: popover.type === t ? 'bold' : 'normal',
-                }}>
-                {t}
-              </button>
-            ))}
+            {(['normal', 'variable', 'wager'] as ChallengeType[]).map((t) => {
+              const selected = popover.type === t;
+              return (
+                <button key={t}
+                  onClick={() => setPopover({ ...popover, type: t })}
+                  style={{
+                    flex: 1, padding: '7px 4px',
+                    background: selected ? typeColor(t) : FILL,
+                    color: selected ? WHITE : INK_SOFT,
+                    border: selected ? 'none' : `1px solid ${HAIRLINE}`,
+                    borderRadius: 8,
+                    cursor: 'pointer', fontSize: 12, textTransform: 'uppercase',
+                    letterSpacing: 0.3,
+                    fontWeight: 700,
+                  }}>
+                  {t}
+                </button>
+              );
+            })}
           </div>
 
-          <label>Name</label>
-          <input value={popover.name} onChange={(e) => setPopover({ ...popover, name: e.target.value })} />
+          <label style={popoverLabel}>Name</label>
+          <input className="loop-input" style={popoverInput}
+            value={popover.name} onChange={(e) => setPopover({ ...popover, name: e.target.value })} />
 
-          <label>Description (hidden until in range)</label>
-          <textarea value={popover.description} onChange={(e) => setPopover({ ...popover, description: e.target.value })} rows={3} />
+          <label style={popoverLabel}>Description (hidden until in range)</label>
+          <textarea className="loop-input" style={{ ...popoverInput, resize: 'vertical', lineHeight: 1.4 }}
+            value={popover.description} onChange={(e) => setPopover({ ...popover, description: e.target.value })} rows={3} />
 
           {popover.type === 'normal' && (
             <>
-              <label>Tokens</label>
-              <input type="number" value={popover.tokens}
+              <label style={popoverLabel}>Tokens</label>
+              <input className="loop-input" style={popoverInput} type="number" value={popover.tokens}
                 onChange={(e) => setPopover({ ...popover, tokens: Math.max(0, Number(e.target.value) || 0) })} />
             </>
           )}
           {popover.type === 'variable' && (
             <>
-              <label>Tokens per unit</label>
-              <input type="number" value={popover.tokensPerUnit}
+              <label style={popoverLabel}>Tokens per unit</label>
+              <input className="loop-input" style={popoverInput} type="number" value={popover.tokensPerUnit}
                 onChange={(e) => setPopover({ ...popover, tokensPerUnit: Math.max(0, Number(e.target.value) || 0) })} />
-              <label>Unit label (e.g. "pushup", "photo")</label>
-              <input value={popover.unitLabel}
+              <label style={popoverLabel}>Unit label (e.g. "pushup", "photo")</label>
+              <input className="loop-input" style={popoverInput} value={popover.unitLabel}
                 onChange={(e) => setPopover({ ...popover, unitLabel: e.target.value })} />
             </>
           )}
           {popover.type === 'wager' && (
-            <p style={{ opacity: 0.6, fontSize: 13, margin: '0 0 4px' }}>
+            <p style={{ color: INK_SOFT, fontSize: 13, margin: '2px 0 0', lineHeight: 1.4 }}>
               Wager: team picks an amount; pass = +2× wager, fail = −wager.
             </p>
           )}
 
-          <label>Activation Radius: {popover.proximityMeters}m</label>
+          <label style={{ ...popoverLabel, marginTop: 6 }}>Activation radius: {popover.proximityMeters}m</label>
           <input type="range" min={50} max={300} value={popover.proximityMeters}
+            style={{ accentColor: ORANGE, background: 'transparent', border: 'none', padding: 0 }}
             onChange={(e) => setPopover({ ...popover, proximityMeters: Number(e.target.value) })} />
 
-          {error && <p style={{ color: '#e74c3c', margin: 0 }}>{error}</p>}
+          {error && <p style={{ color: DANGER, margin: '2px 0 0', fontSize: 13, fontWeight: 600 }}>{error}</p>}
 
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+            <button onClick={handleCancel} disabled={saving}
+              style={{ flex: 1, padding: '10px 12px', background: FILL, color: INK, border: `1px solid ${HAIRLINE}`, borderRadius: RADIUS_FIELD, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 700 }}>
+              Cancel
+            </button>
             <button onClick={handleSave} disabled={saving}
-              style={{ flex: 1, padding: 8, opacity: saving ? 0.5 : 1 }}>
+              style={{ flex: 1, padding: '10px 12px', background: ORANGE, color: WHITE, border: 'none', borderRadius: RADIUS_FIELD, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 700, opacity: saving ? 0.6 : 1 }}>
               {saving ? 'Saving…' : 'Save'}
             </button>
-            <button onClick={handleCancel} disabled={saving} style={{ flex: 1, padding: 8 }}>Cancel</button>
           </div>
           {editingId && (
             <button onClick={handleDelete}
-              style={{ padding: 8, background: '#e74c3c', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', marginTop: 4 }}>
-              Delete Challenge
+              style={{ padding: '10px 12px', background: 'none', color: DANGER, border: `1px solid ${HAIRLINE}`, borderRadius: RADIUS_FIELD, cursor: 'pointer', marginTop: 2, fontSize: 13, fontWeight: 700 }}>
+              Delete challenge
             </button>
           )}
         </div>
@@ -593,8 +746,9 @@ export default function AdminSetupPage() {
         <OrderTimeline
           challenges={challenges}
           activeChallengeCount={game?.activeChallengeCount ?? 3}
-          onClose={() => setShowOrderPanel(false)}
-          onMove={moveChallenge}
+          onClose={() => { setShowOrderPanel(false); setPreviewOrder(null); }}
+          onReorder={commitOrder}
+          onPreviewChange={setPreviewOrder}
         />
       )}
 
@@ -609,6 +763,20 @@ export default function AdminSetupPage() {
       )}
     </div>
   );
+}
+
+// Square icon button for the scrubber transport controls. `active` paints the
+// brand-orange "playing" state; the icon inherits `color` via currentColor.
+function ctrlBtn({ active = false, disabled = false }: { active?: boolean; disabled?: boolean }): React.CSSProperties {
+  return {
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    width: 34, height: 32, padding: 0, flexShrink: 0,
+    background: active ? ORANGE : WHITE,
+    border: `1px solid ${active ? ORANGE : HAIRLINE}`,
+    color: active ? WHITE : (disabled ? DISABLED_BG : INK),
+    borderRadius: 8,
+    cursor: disabled ? 'default' : 'pointer',
+  };
 }
 
 function TimelineScrubber({
@@ -647,63 +815,51 @@ function TimelineScrubber({
   }
 
   const active = sorted.slice(step, Math.min(step + K, N));
-  const claimedCount = step;
-  const queuedCount = Math.max(0, N - step - K);
-
-  let label: string;
-  if (step === 0) label = 'Game start';
-  else if (step >= N) label = 'All challenges claimed';
-  else label = `After ${step} claim${step === 1 ? '' : 's'}`;
 
   return (
     <div style={{
       position: 'absolute', bottom: 16, left: 16, right: 16,
-      maxWidth: 640, margin: '0 auto',
-      background: 'rgba(0,0,0,0.78)', color: 'white',
-      padding: '10px 14px', borderRadius: 8,
-      display: 'flex', flexDirection: 'column', gap: 8,
+      maxWidth: 520, margin: '0 auto',
+      background: WHITE, color: INK,
+      padding: '14px 18px', borderRadius: RADIUS_PANEL,
+      boxShadow: PANEL_SHADOW,
+      display: 'flex', flexDirection: 'column', gap: 12,
       pointerEvents: 'auto',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 12 }}>
-        <span style={{ fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 0.6 }}>
-          Map preview · {label}
-        </span>
-        <span style={{ marginLeft: 'auto', opacity: 0.6 }}>
-          {claimedCount} done · {active.length} active · {queuedCount} queued
-        </span>
-      </div>
-
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <button onClick={handlePlayPause}
           title={playing ? 'Pause' : (step >= maxStep ? 'Replay from start' : 'Play')}
-          style={{
-            background: playing ? '#3498db' : 'none',
-            border: '1px solid rgba(255,255,255,0.3)',
-            color: 'white', borderRadius: 4, padding: '2px 10px',
-            cursor: 'pointer', minWidth: 32, fontSize: 13,
-          }}>
-          {playing ? '❚❚' : '▶'}
+          aria-label={playing ? 'Pause' : 'Play'}
+          style={ctrlBtn({ active: playing })}>
+          {playing ? <PauseIcon size={18} /> : <PlayIcon size={18} />}
         </button>
         <button onClick={() => { setPlaying(false); onStepChange(Math.max(0, step - 1)); }}
-          disabled={step === 0}
-          style={{ background: 'none', border: '1px solid rgba(255,255,255,0.3)', color: step === 0 ? '#555' : 'white', borderRadius: 4, padding: '2px 8px', cursor: step === 0 ? 'default' : 'pointer' }}>‹</button>
+          disabled={step === 0} aria-label="Step back"
+          style={ctrlBtn({ disabled: step === 0 })}>
+          <ChevronLeftIcon size={20} />
+        </button>
         <input type="range" min={0} max={maxStep} value={step}
           onChange={(e) => { setPlaying(false); onStepChange(Number(e.target.value)); }}
-          style={{ flex: 1 }} />
+          style={{ flex: 1, accentColor: ORANGE, background: 'transparent', border: 'none', padding: 0 }} />
         <button onClick={() => { setPlaying(false); onStepChange(Math.min(maxStep, step + 1)); }}
-          disabled={step === maxStep}
-          style={{ background: 'none', border: '1px solid rgba(255,255,255,0.3)', color: step === maxStep ? '#555' : 'white', borderRadius: 4, padding: '2px 8px', cursor: step === maxStep ? 'default' : 'pointer' }}>›</button>
+          disabled={step === maxStep} aria-label="Step forward"
+          style={ctrlBtn({ disabled: step === maxStep })}>
+          <ChevronRightIcon size={20} />
+        </button>
         <button onClick={() => { setPlaying(false); onStepChange(0); }}
-          style={{ background: 'none', border: '1px solid rgba(255,255,255,0.3)', color: 'white', borderRadius: 4, padding: '2px 10px', cursor: 'pointer', fontSize: 11 }}>Reset</button>
+          title="Reset to start" aria-label="Reset to start"
+          style={ctrlBtn({})}>
+          <ReplayIcon size={18} />
+        </button>
       </div>
 
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', fontSize: 11, alignItems: 'center' }}>
-        <span style={{ opacity: 0.5 }}>Active now:</span>
-        {active.length === 0 && <span style={{ opacity: 0.5, fontStyle: 'italic' }}>none</span>}
+        <span style={{ color: INK_SOFT }}>Active now:</span>
+        {active.length === 0 && <span style={{ color: INK_SOFT, fontStyle: 'italic' }}>none</span>}
         {active.map((c) => (
           <span key={c.id} style={{
-            padding: '2px 8px', borderRadius: 10,
-            background: typeColor(c.type), fontWeight: 500,
+            padding: '3px 9px', borderRadius: RADIUS_PILL, color: WHITE,
+            background: typeColor(c.type), fontWeight: 600,
           }}>
             {c.name}
           </span>
