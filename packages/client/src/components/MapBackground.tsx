@@ -37,42 +37,52 @@ export default function MapBackground() {
   useEffect(() => {
     if (!ref.current) return;
     ensurePmtilesProtocol();
-    const map = new maplibregl.Map({
-      container: ref.current,
-      style: getMapStyle(),
-      center: CHICAGO_CENTER,
-      zoom: DEFAULT_ZOOM,
-      interactive: false,
-      attributionControl: false,
-    });
 
     let rafId = 0;
+    let map: maplibregl.Map | undefined;
 
-    map.on('load', () => {
-      if (map.getLayer('rail')) {
-        map.setPaintProperty('rail', 'line-color', '#a89a82');
-        map.setPaintProperty('rail', 'line-width', [
-          'interpolate', ['linear'], ['zoom'], 12, 1.0, 16, 2.2,
-        ]);
-      }
+    // Guard map creation: if WebGL is unavailable the constructor throws, and
+    // an uncaught throw here would unmount the whole page. The map is purely
+    // decorative, so on failure we fall back to the dark overlay alone.
+    try {
+      map = new maplibregl.Map({
+        container: ref.current,
+        style: getMapStyle(),
+        center: CHICAGO_CENTER,
+        zoom: DEFAULT_ZOOM,
+        interactive: false,
+        attributionControl: false,
+      });
 
-      let lastStep = -1;
-      function tick(now: number) {
-        const step = Math.floor(now / DASH_STEP_MS) % RAIL_DASH_SEQ.length;
-        if (step !== lastStep) {
-          if (map.getLayer('rail')) {
-            map.setPaintProperty('rail', 'line-dasharray', RAIL_DASH_SEQ[step]);
+      const m = map;
+      m.on('load', () => {
+        if (m.getLayer('rail')) {
+          m.setPaintProperty('rail', 'line-color', '#a89a82');
+          m.setPaintProperty('rail', 'line-width', [
+            'interpolate', ['linear'], ['zoom'], 12, 1.0, 16, 2.2,
+          ]);
+        }
+
+        let lastStep = -1;
+        function tick(now: number) {
+          const step = Math.floor(now / DASH_STEP_MS) % RAIL_DASH_SEQ.length;
+          if (step !== lastStep) {
+            if (m.getLayer('rail')) {
+              m.setPaintProperty('rail', 'line-dasharray', RAIL_DASH_SEQ[step]);
+            }
+            lastStep = step;
           }
-          lastStep = step;
+          rafId = requestAnimationFrame(tick);
         }
         rafId = requestAnimationFrame(tick);
-      }
-      rafId = requestAnimationFrame(tick);
-    });
+      });
+    } catch (err) {
+      console.warn('MapBackground failed to initialize:', err);
+    }
 
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
-      map.remove();
+      map?.remove();
     };
   }, []);
 
