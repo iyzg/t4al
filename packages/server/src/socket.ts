@@ -75,7 +75,12 @@ export function registerSocketHandlers(io: Server) {
         activeChallengeId: t.activeChallengeId,
       }));
       const challenges = await repo.listActiveChallenges(data.gameId);
-      socket.emit('game:state', { game, teams: teamSnapshots, challenges });
+      // Withhold descriptions from players — revealed via team:state on start.
+      socket.emit('game:state', {
+        game,
+        teams: teamSnapshots,
+        challenges: challenges.map((c) => ({ ...c, description: '' })),
+      });
 
       // Emit team:state (private) to this team's room
       lifecycle.emitTeamState(io, data.teamId);

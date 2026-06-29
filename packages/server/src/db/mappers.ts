@@ -67,6 +67,7 @@ export function mapTeamPrivateState(row: any): TeamPrivateState {
     activeChallengeId: row.active_challenge_id,
     wagerAmount: row.wager_amount,
     tokens: row.tokens,
+    activeChallengeDescription: row.active_challenge_description ?? null,
   };
 }
 

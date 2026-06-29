@@ -208,7 +208,8 @@ export async function fillQueueAndBroadcast(io: Server, gameId: string) {
   const activated = await repo.fillQueue(gameId);
   for (const ch of activated) {
     scheduleChallengeExpiry(io, gameId, ch, game.challengeExpireMinutes);
-    io.to(`game:${gameId}`).emit('challenge:spawned', { challenge: ch });
+    // Withhold the description from players — revealed via team:state on start.
+    io.to(`game:${gameId}`).emit('challenge:spawned', { challenge: { ...ch, description: '' } });
     repo.logEvent(gameId, 'challenge:spawned', {
       challengeId: ch.id,
       name: ch.name,
@@ -285,9 +286,13 @@ export async function startGameAndBroadcast(
 
   startAdminPositionBroadcast(io, gameId);
 
-  // Fresh game snapshot so clients get K activated challenges
+  // Fresh game snapshot so clients get K activated challenges (descriptions
+  // withheld from players — revealed via team:state on start).
   const challenges = await repo.listActiveChallenges(gameId);
-  io.to(`game:${gameId}`).emit('game:started', { game, challenges });
+  io.to(`game:${gameId}`).emit('game:started', {
+    game,
+    challenges: challenges.map((c) => ({ ...c, description: '' })),
+  });
   repo.logEvent(gameId, 'game:started', {});
 
   return { ok: true };

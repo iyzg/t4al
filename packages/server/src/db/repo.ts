@@ -381,9 +381,15 @@ export async function completeChallenge(
 
 export async function getTeamPrivateRow(
   teamId: string,
-): Promise<{ activeChallengeId: string | null; wagerAmount: number | null; tokens: number } | null> {
+): Promise<{ activeChallengeId: string | null; wagerAmount: number | null; tokens: number; activeChallengeDescription: string | null } | null> {
+  // LEFT JOIN the active challenge so the player only ever receives a
+  // description for a challenge their team has actually started.
   const r = await pool.query(
-    'SELECT active_challenge_id, wager_amount, tokens FROM teams WHERE id = $1',
+    `SELECT t.active_challenge_id, t.wager_amount, t.tokens,
+            c.description AS active_challenge_description
+       FROM teams t
+       LEFT JOIN challenges c ON c.id = t.active_challenge_id
+      WHERE t.id = $1`,
     [teamId],
   );
   if (!r.rows[0]) return null;
@@ -391,6 +397,7 @@ export async function getTeamPrivateRow(
     activeChallengeId: r.rows[0].active_challenge_id,
     wagerAmount: r.rows[0].wager_amount,
     tokens: r.rows[0].tokens,
+    activeChallengeDescription: r.rows[0].active_challenge_description ?? null,
   };
 }
 

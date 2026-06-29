@@ -112,4 +112,7 @@ export interface TeamPrivateState {
   activeChallengeId: string | null;
   wagerAmount: number | null;
   tokens: number;
+  // The active challenge's description, revealed only once the team starts it.
+  // null when the team has no active challenge (so it hides on abandon/claim/expire).
+  activeChallengeDescription: string | null;
 }
